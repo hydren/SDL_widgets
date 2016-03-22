@@ -1,3 +1,6 @@
+#ifndef _SDL_WIDGETS_H
+#define _SDL_WIDGETS_H
+
 /*  Copyright 2011 W.Boeke
 
     This program is free software: you can redistribute it and/or modify
@@ -14,9 +17,9 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <SDL.h>
-#include <SDL_gfxPrimitives.h>
-#include <SDL_ttf.h>
+#include <SDL/SDL.h>
+#include <SDL/SDL_gfxPrimitives.h>
+#include <SDL/SDL_ttf.h>
 
 extern Uint32 cWhite, cBlack, cGrey, cRed, cBlue,
               cForeground, cBackground, cBorder, cPointer, cScrollbar;
@@ -484,3 +487,5 @@ namespace mwin {
   void move(BgrWin *bgw,int x,int y,int but);
   void up(BgrWin *bgw,int x,int y,int but);
 }
+
+#endif /* _SDL_WIDGETS_H */

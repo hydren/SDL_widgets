@@ -24,6 +24,10 @@
 #include "sdl-widgets.h"
 #include "sw-pixmaps.h"
 
+#ifdef _WIN32
+#define bzero(b,len) (memset((b), '\0', (len)), (void) 0)
+#endif
+
 Uint32 cWhite,cBlack, cGrey, cRed, cBlue,
        cBorder, cBackground, cForeground, cPointer, cScrollbar;
 
