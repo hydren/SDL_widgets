@@ -1,2 +1,4 @@
 # SDL_widgets
-A fork from SDL_widgets by W.Boeke, for reference.
+
+A fork of SDL_widgets by W.Boeke, for reference purposes.
+
