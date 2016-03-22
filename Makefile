@@ -1,12 +1,11 @@
 CC=g++
-CFLAGS=-g -O $$(sdl-config --cflags) \
-  -Wall -Wuninitialized -Wshadow -Wno-non-virtual-dtor -Wno-delete-non-virtual-dtor -Wno-multichar
+CFLAGS=-g -O $$(sdl-config --cflags) -std=c++0x \
+  -Wall -Wuninitialized -Wshadow -Wno-non-virtual-dtor -Wno-delete-non-virtual-dtor -Wno-multichar -fmax-errors=5
 OBJ=testsw.o sdl-widgets.o
 
 .SUFFIXES=
 .PHONY: all hello make-waves bouncy-tune
 
-#all: testsw
 all: testsw hello make-waves bouncy-tune
 
 testsw: $(OBJ)

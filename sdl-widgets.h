@@ -25,7 +25,7 @@ const int
   TDIST=14;  // distance text lines
 
 struct Int2 {
-  int x,y;
+  short x,y;
   Int2(int x,int y);
   Int2();
   void set(int x,int y);
@@ -53,20 +53,15 @@ static Rect *rp(int x,int y,int w,int h) { // creates pointer to Rect. Each sour
   return &rp_rect;
 }
 
-struct Id {
-  int id1,id2;
-  Id(int);
-  Id(int,int);
-};
-
 struct Label {
   struct RenderText *render_t;
-  void (*draw_cmd)(SDL_Surface *win,int nr,int y_off);
+  void (*draw_cmd)(SDL_Surface *win,int id,int y_off);
   const char *str;  // the text
+  int id;
   Label(const char* txt);
-  Label(void (*draw_cmd)(SDL_Surface *win,int nr,int y_off));
-  Label(const char *txt,void (*dr)(SDL_Surface *win,int nr,int y_off));
-  void draw(SDL_Surface *win,int nr,Point pnt);
+  Label(void (*draw_cmd)(SDL_Surface *win,int id,int y_off),int id=0);
+  Label(const char *txt,void (*dr)(SDL_Surface *win,int id,int y_off),int id=0);
+  void draw(SDL_Surface *win,Point pnt);
 };
 
 struct Style {
@@ -91,7 +86,7 @@ struct RenderText {
 };
 
 struct WinBase {
-  SDL_Surface *win,   // parent window
+  SDL_Surface *win,
               *title;
   WinBase *parent;
   WinBase **children;
@@ -104,8 +99,7 @@ struct WinBase {
   int lst_child,end_child;
   Uint32 bgcol;
   bool hidden;
-  Id id;
-  WinBase(WinBase *pw,const char *t,int x,int y,int dx,int dy,Uint32 bgcol,Id id);
+  WinBase(WinBase *pw,const char *t,int x,int y,int dx,int dy,Uint32 bgcol);
   ~WinBase();
   void set_parent(WinBase *pw);
   virtual void draw()=0;
@@ -135,7 +129,7 @@ struct WinBase {
 
 struct TopWin:WinBase {
   void (*display_cmd)();
-  TopWin(const char* title,Rect rect,Uint32 init_flag,Uint32 video_flag,void (*draw)(),void (*set_icon)()=0);
+  TopWin(const char* title,Rect rect,Uint32 init_flag,Uint32 video_flag,void (*disp_cmd)(),void (*set_icon)()=0);
   void draw();
 };
 
@@ -144,7 +138,7 @@ struct Button:WinBase {
   Style style;
   Label label;
   void (*cmd)(Button*);
-  Button(WinBase *pw,Style,Rect,Label lab,void (*cmd)(Button*),Id id=0);
+  Button(WinBase *pw,Style,Rect,Label lab,void (*cmd)(Button*),const char *title=0);
   void draw();
 };
 
@@ -153,6 +147,7 @@ struct BgrWin:WinBase {  // background window
   void (*down_cmd)(BgrWin*,int x,int y,int but);
   void (*moved_cmd)(BgrWin*,int x,int y,int but);
   void (*up_cmd)(BgrWin*,int x,int y,int but);
+  int id;
   BgrWin(WinBase *pw,
          Rect,
          const char* title,
@@ -160,8 +155,7 @@ struct BgrWin:WinBase {  // background window
          void (*down_cmd)(BgrWin*,int,int,int),
          void (*moved_cmd)(BgrWin*,int,int,int),
          void (*up_cmd)(BgrWin*,int,int,int),
-         Uint32 wcol,
-         Id id=0);
+         Uint32 wcol,int id=0);
   //void move_contents_h(int delta);  // move contents horizontal
   void draw();
 };
@@ -174,7 +168,7 @@ struct TextWin:WinBase {
   Style style;
   char (*textbuf)[SMAX];
   
-  TextWin(WinBase *pw,Style,Rect rect,int lmax,const char* title,Id id=0);
+  TextWin(WinBase *pw,Style,Rect rect,int lmax,const char* title);
   void draw();
   void add_text(const char*,bool do_draw);
   void reset();
@@ -183,9 +177,8 @@ struct TextWin:WinBase {
 // radio buttons
 struct RButton {
   Label label;
-  void (*cmd)(struct RButWin*,int nr,int fire);
   RButton();
-  RButton(int nr,Label lab);
+  RButton(Label lab);
 };
 
 struct RButWinData {
@@ -205,7 +198,7 @@ struct RButWin:WinBase {
   RButWinData def_buttons, // default buttons
               *d;
   Style style;
-  RButWin(WinBase *parent,Style,Rect,const char *title,bool mbz,void(*cmd)(RButWin*,int nr,int fire),Id id=0);
+  RButWin(WinBase *parent,Style,Rect,const char *title,bool mbz,void(*cmd)(RButWin*,int nr,int fire));
   ~RButWin();
   void draw_rbutton(RButton *rb);
   void draw();
@@ -217,17 +210,41 @@ struct RButWin:WinBase {
   RButton *is_in_rbutton(SDL_MouseButtonEvent *ev);
 };
 
+struct RButtons:WinBase {
+  int def_button,
+      *d,
+      butnr,
+      rb_max,
+      y_off;
+  RButton *but;
+  int next();
+  const int b_dist; // button distance
+  bool maybe_z;  // unselect with second click?
+  void (*rb_cmd)(RButtons*,int nr,int fire);
+  Style style;
+  RButtons(WinBase *parent,Style,Rect,const char *title,bool mbz,void(*cmd)(RButtons*,int nr,int fire));
+  ~RButtons();
+  void draw_rbutton(RButton *rb);
+  void draw();
+  void set_rbutnr(int nr,int fire=1,bool do_draw=true);
+  int& value();
+  void reset();
+  RButton *add_rbut(Label lab);
+  RButton *is_in_rbutton(SDL_MouseButtonEvent *ev);
+};
+
 // extern radio button
 struct RExtButton:WinBase {
   struct ExtRButCtrl *rxb_ctr;
+  int id;
   Style style;
   Label label;
-  RExtButton(WinBase *pw,Style,Rect,Label,Id id=0);
+  RExtButton(WinBase *pw,Style,Rect,Label,int id);
   void draw();
 };
 
 struct ExtRButCtrl {
-  int butnr;  // total nr of buttons
+  int butnr;
   bool maybe_z;  // can all buttons be unselected?
   Style style;
   RExtButton *act_lbut;
@@ -236,7 +253,7 @@ struct ExtRButCtrl {
   int next();
   void set_rbut(RExtButton*,int fire=1);
   void reset();
-  RExtButton *add_extrbut(WinBase *pw,Rect,Label lab,Id id);
+  RExtButton *add_extrbut(WinBase *pw,Rect,Label lab,int id);
 };
 
 // horizontal slider
@@ -250,12 +267,13 @@ struct HSlider:WinBase {
   char *text;
   Style style;
   void (*cmd)(HSlider*,int fire,bool rel);
+  bool rel_cmd;
   HSlider(WinBase *parent,Style,Rect rect,int minval,int maxval,const char* t,
-          void (*cmd)(HSlider*,int fire,bool rel),Id id=0);
+          void (*cmd)(HSlider*,int fire,bool rel),bool rel_cmd=false);
   int &value();
   void calc_hslval(int x);
   void draw();
-  void set_hsval(int val,int fire=1,bool do_draw=true);
+  void set_hsval(int val,int fire=1,bool do_draw=true,bool rel=false);
 };
 
 // vertical slider
@@ -267,13 +285,14 @@ struct VSlider:WinBase {
   char *text;
   Style style;
   void (*cmd)(VSlider*,int fire,bool rel);
+  bool rel_cmd;
   Rect txt_rect;
   VSlider(WinBase *parent,Style,Rect rect,int minval,int maxval,const char* t,
-          void (*cmd)(VSlider*,int fire,bool rel),Id id=0);
+          void (*cmd)(VSlider*,int fire,bool rel),bool rel_cmd=false);
   int &value();
   void calc_vslval(int x);
   void draw();
-  void set_vsval(int val,int fire=1,bool do_draw=true);
+  void set_vsval(int val,int fire=1,bool do_draw=true,bool rel=false);
   void hide(); // = WinBase::hide + hide text
   void show(); // = WinBase::show + draw text
 };
@@ -287,13 +306,14 @@ struct HVSlider:WinBase {
   char *text_x,*text_y;
   Style style;
   void (*cmd)(HVSlider*,int fire,bool rel);
+  bool rel_cmd;
   Rect txt_rect;
   HVSlider(WinBase *pw,Style,Rect rect,Int2 minval,Int2 maxval,const char* t,
-           void (*cmd)(HVSlider*,int fire,bool rel),Id id=0);
+           void (*cmd)(HVSlider*,int fire,bool rel),bool rel_cmd=false);
   void calc_hvslval(Int2 i2);
   Int2& value();
   void draw();
-  void set_hvsval(Int2,int fire=1,bool do_draw=true);
+  void set_hvsval(Int2,int fire=1,bool do_draw=true,bool rel=false);
   void hide(); // like VSlider::hide()
   void show();
 };
@@ -306,6 +326,7 @@ struct Dial:WinBase {
   char *text;
   Style style;
   void (*cmd)(Dial*,int fire,bool rel);
+  bool rel_cmd;
   const Point mid;
   Rect txt_rect; // text display, w.r.t. parent
   static const int pnt_max=4,
@@ -317,11 +338,11 @@ struct Dial:WinBase {
         angle[pnt_max],
         ang;
   Dial(WinBase *parent,Style,Rect rect,int minval,int maxval,const char* t,
-       void (*cmd)(Dial*,int fire,bool rel),Id id=0);
+       void (*cmd)(Dial*,int fire,bool rel),bool rel_cmd=false);
   int &value();
   void calc_dialval(int x,bool init);
   void draw();
-  void set_dialval(int val,int fire=1,bool do_draw=true);
+  void set_dialval(int val,int fire=1,bool do_draw=true,bool rel=false);
   void hide(); // = WinBase::hide + hide text
   void show(); // = WinBase::show + draw text
   void rotate();
@@ -335,7 +356,7 @@ struct CheckBox:WinBase {
   Label label;
   Style style;
   void (*cmd)(CheckBox*);
-  CheckBox(WinBase *pw,Style,Rect,Label lab,void (*cmd)(CheckBox*),Id id=0);
+  CheckBox(WinBase *pw,Style,Rect,Label lab,void (*cmd)(CheckBox*));
   bool &value();
   void draw();
   void set_cbval(bool,int fire=1,bool do_draw=true);
@@ -347,13 +368,13 @@ struct HScrollbar:WinBase {
       value;
   Style style;
   const int ssdim; // soft scroll area
-  void (*cmd)(HScrollbar*,int val,int range);
-  HScrollbar(WinBase *pw,Style,Rect,int r,void (*cmd)(HScrollbar*,int val,int range),Id id=0);
+  void (*cmd)(HScrollbar*);
+  HScrollbar(WinBase *pw,Style,Rect,int r,void (*cmd)(HScrollbar*));
   void calc_params(int r);
   void draw();
-  void set_range(int range);
+  void set_range(int range,bool upd=true);
   void calc_xpos(int newx);
-  void set_xpos(int newx);
+  void set_xpos(int newx,bool upd=true);
   void inc_value(bool incr);
   bool in_ss_area(SDL_MouseButtonEvent *ev,bool *dir);
 };
@@ -364,13 +385,13 @@ struct VScrollbar:WinBase {
       value;
   Style style;
   const int ssdim; // soft scroll area
-  void (*cmd)(VScrollbar*,int val,int range);
-  VScrollbar(WinBase *pw,Style,Rect,int r,void (*cmd)(VScrollbar*,int val,int range),Id id=0);
+  void (*cmd)(VScrollbar*);
+  VScrollbar(WinBase *pw,Style,Rect,int r,void (*cmd)(VScrollbar*));
   void calc_params(int r);
   void draw();
-  void set_range(int);
+  void set_range(int range,bool upd=true);
   void calc_ypos(int newy);
-  void set_ypos(int newy);
+  void set_ypos(int newy,bool upd=true);
   void inc_value(bool incr);
   bool in_ss_area(SDL_MouseButtonEvent *ev,bool *dir);
 };
@@ -381,11 +402,11 @@ struct EditWin:WinBase {
       lmax,
       y_off;
   struct Line **lines;
-  void (*cmd)(int ctrl_key,int key,int cmd_id);
+  void (*cmd)(int ctrl_key,int key);
   struct {
     int x,y;
   } cursor;
-  EditWin(WinBase *pw,Rect,const char *title,void (*cmd)(int cmd_id,int ctrl_key,int key),Id id=0);
+  EditWin(WinBase *pw,Rect,const char *title,void (*cmd)(int ctrl_key,int key));
   void draw();
   void draw_line(int vpos,bool upd);
   void set_offset(int yoff);
@@ -406,7 +427,7 @@ struct DialogWin:WinBase {
   const char *label;
   struct Line *lin;
   void (*cmd)(const char* text,int cmd_id);
-  DialogWin(WinBase *pw,Rect,Id id=0);
+  DialogWin(WinBase *pw,Rect);
   void draw_line();
   void set_cursor(int pos);
   void unset_cursor();
@@ -434,7 +455,7 @@ struct Message {
   const char *label;
   Point lab_pt; // label Point
   Rect mes_r;   // message Rect
-  Uint32 bgcol; // background color for message
+  RenderText *custom_ttf;
   Message(WinBase *pw,Style,const char* lab,Point top);
   void draw_label(bool upd=false);
   void draw_mes(const char *form,...);
@@ -445,14 +466,30 @@ private:
 
 struct CmdMenu {
   Rect mrect;
-  int nr_buttons;
+  int nr_buttons,
+      def_val,
+      *d;
   bool sticky;
   Button *src;
-  RButWin *buttons;
+  RButtons *buttons;
   CmdMenu(Button *src);
-  bool init(int wid,int nr_buttons,void (*menu_cmd)(RButWin*,int nr,int fire));
+  bool init(int wid,int nr_buttons,void (*menu_cmd)(RButtons*,int nr,int fire));
   RButton* add_mbut(Label lab);
+  int& value();
   void mclose();
+};
+
+struct Lazy {
+  bool pause,
+       cmd_done;
+  const int dur;
+  void (*cmd)(int);
+  SDL_mutex *mtx;
+  SDL_cond *cond;
+  Lazy(void (*_cmd)(int),int dur);
+  static int threadfun(void *laz);
+  void threadfun();
+  void kick();
 };
 
 extern bool sdl_running;
@@ -462,11 +499,10 @@ extern RenderText *draw_ttf,
                   *draw_blue_ttf;
 extern Point alert_position;
 extern const char *def_fontpath;
-
-void send_uev(int cmd,int param1=0,int param2=0);
-extern void (*handle_uev)(int cmd,int param,int param2); // user event
 extern void (*handle_kev)(SDL_keysym *key,bool down);    // keyboard event
 extern void (*handle_rsev)(int dw,int dh);               // resize event
+
+void send_uev(void (*cmd)(int),int par);
 void set_text(char *&txt,const char *form,...);
 void say(const char *form,...);
 void err(const char *form,...);
@@ -476,8 +512,8 @@ void get_events();
 Uint32 calc_color(Uint32 c);
 SDL_Surface *create_pixmap(const char* pm_data[]);
 SDL_Cursor *init_system_cursor(const char *image[]);
-void file_chooser(void (*cmd)(const char* f_name,Id id),Id=0);
-void working_dir(void (*cmd)(const char* dir_name,Id id)=0,Id=0);
+void file_chooser(void (*cmd)(const char* f_name));
+void working_dir(void (*cmd)(const char* dir_name));
 void print_h();  // print widget hierarchy
 namespace mwin {
   void down(BgrWin *bgw,int x,int y,int but);

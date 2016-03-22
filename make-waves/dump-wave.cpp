@@ -1,6 +1,5 @@
-/*  
+/*  Demo program for SDL-widgets-2.0
     Original authors: Sed Barbouky, Christian Klein
-    Demo program for SDL-widgets-1.0
     Copyright 2011-2013 W.Boeke
 
     This program is free software; you can redistribute it and/or
@@ -25,6 +24,12 @@ static bool inited=false;
 static FILE *dumpfd;
 static int size;
 
+void f_close(FILE*& fil) {
+  if (!fil) return;
+  fclose(fil);
+  fil=0;
+}
+
 // return false if error
 bool init_dump_wav(const char *fname,int nr_chan,int sample_rate) {
   Sint16 dum16;
@@ -45,7 +50,7 @@ bool init_dump_wav(const char *fname,int nr_chan,int sample_rate) {
      (dum16=16, fwrite(&dum16, 2,1,dumpfd)!=1) ||       // bits per sample
      fwrite("data", 4,1,dumpfd)!=1 ||
      (dum32=0, fwrite(&dum32, 4,1,dumpfd)!=1)) {        // sample length (0 for now)
-    fclose(dumpfd);
+    f_close(dumpfd);
     alert("init_dump_wav: initialization failed");
     return false;
   }
@@ -57,6 +62,7 @@ bool init_dump_wav(const char *fname,int nr_chan,int sample_rate) {
 bool close_dump_wav(void) {
   if (!inited) { alert("close_dump_wav: not inited"); return false; }
   inited=false;
+  if (!dumpfd) { alert("close_dump_wav: file?"); return false; }
 
   // update the wav header
   fseek(dumpfd, 4, SEEK_SET);  // first place to update
@@ -65,12 +71,12 @@ bool close_dump_wav(void) {
   fseek(dumpfd, 40, SEEK_SET); // second place
   if (fwrite(&size, 4,1,dumpfd)!=1) goto error;
 
-  fclose(dumpfd);
+  f_close(dumpfd);
   return true;
 
   error:
   alert("close_dump_wav: header update failed");
-  fclose(dumpfd);
+  f_close(dumpfd);
   return false;
 }
 
@@ -78,7 +84,7 @@ bool dump_wav(char *buf, int sz) {
   if (!inited) { alert("dump_wav: not inited"); return false; }
   if (fwrite(buf, sz,1,dumpfd)!=1) {
     alert("dump_wav: write problem");
-    fclose(dumpfd);
+    f_close(dumpfd);
     return false;
   }
   size+=sz;
@@ -97,8 +103,8 @@ int main() {
     for (m=0;m<NB_SAMPLE;m+=2) {
       val1=(val1+6)%628; // 100 * 2 * PI = 628
       val2=(val2+9)%628;
-      buf[m]=Sint16(10000. * sin(val1/100.));
-      buf[m+1]=Sint16(10000. * sin(val2/100.));
+      buf[m]=Sint16(10000. * sinf(val1/100.));
+      buf[m+1]=Sint16(10000. * sinf(val2/100.));
     }
     res=dump_wav((char*)buf,NB_SAMPLE*2);
     if (!res) break;

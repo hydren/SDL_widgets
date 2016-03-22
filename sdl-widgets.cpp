@@ -1,5 +1,5 @@
 /*  
-    SDL-widgets-1.0
+    SDL-widgets-2.0
     Copyright 2011-2013 W.Boeke
 
     This library is free software; you can redistribute it and/or
@@ -27,7 +27,7 @@
 Uint32 cWhite,cBlack, cGrey, cRed, cBlue,
        cBorder, cBackground, cForeground, cPointer, cScrollbar;
 
-const Uint32
+static const Uint32
   pixdepth=16,
   foreground= 0xcdba96ff,
   background= 0xdcd8c0ff,
@@ -41,11 +41,13 @@ const Uint32
   grey4     = 0xb0b0b0ff,
   grey8     = 0xe9e9e9ff,
   white     = 0xffffffff;
-const float rad2deg=180/M_PI; // = 57.3
+
+static const float rad2deg=180/M_PI; // = 57.3
 
 const char *def_fontpath=FONTPATH;
 
 static int
+   tick_cnt,
    char_wid=0,   // -> 7
    ontop_nr=-1,  // index 
    max_ontopwin=5;
@@ -55,7 +57,6 @@ RenderText *draw_ttf,
            *draw_mono_ttf,
            *draw_blue_ttf;
 
-void (*handle_uev)(int cmd,int param,int param2);
 void (*handle_kev)(SDL_keysym *key,bool down);
 void (*handle_rsev)(int dw,int dh);
 
@@ -70,8 +71,7 @@ struct Color5 {
 
 static Uint32 cSelCmdMenu, cSlBackgr, cSlBar, cPointer1, cPointer2, cSelRBut, cButBground, cMenuBground,
               cGrey0,cGrey1,cGrey2,cGrey3,cGrey4,cGrey5,cGrey6,cGrey7,cGrey8,
-              video_flag,
-              go_ticks; // increased by keep_alive thread
+              video_flag;
 static const int
   nominal_font_size=12,
   LBMAX=20;     // labels etc.
@@ -87,6 +87,8 @@ static TTF_Font
 static const SDL_Color def_text_col={ 0,0,0 },
                        blue_col={ 0,0,0xf0 },
                        dark_blue_col={ 0,0,0xa0 };
+
+Point alert_position(4,4);
 
 static SDL_mutex *mtx=SDL_CreateMutex();
 static SDL_cond *cond=SDL_CreateCond();
@@ -142,8 +144,6 @@ const char *id2s(int id) { // from 'abc' to "abc"
   buf[i]='\'';
   return buf+i;
 }
-
-Point alert_position(4,4);
 
 static int min(int a, int b) { return a<=b ? a : b; }
 static int max(int a, int b) { return a>=b ? a : b; }
@@ -203,8 +203,8 @@ namespace mwin {  // to move BgrWin
   static Point mouse_point;
 
   static void draw_outline(BgrWin *bgr) {
-    Rect *r=&bgr->tw_area;
-    rectangleColor(topw->win,r->x,r->y,r->x + r->w - 1,r->y + r->h - 1,red);
+    Rect &r=bgr->tw_area;
+    rectangleColor(topw->win,r.x,r.y,r.x + r.w - 1,r.y + r.h - 1,red);
   }
 
   void down(BgrWin* bgr,int x,int y,int but) { 
@@ -212,7 +212,10 @@ namespace mwin {  // to move BgrWin
       if (!bgr->ontopw) { alert("widget not on-top"); return; }
       SDL_EventState(SDL_MOUSEMOTION, SDL_ENABLE);
       mouse_point.set(x,y);
+      bgr->hidden=true;
+      SDL_BlitSurface(bgr->ontopw->backup,0,topw->win,&bgr->tw_area);
       draw_outline(bgr);
+      SDL_UpdateRects(topw->win,1,&bgr->tw_area);
     }
   }
 
@@ -221,26 +224,8 @@ namespace mwin {  // to move BgrWin
       return;
     if (!bgr->ontopw) { alert("widget not on-top"); return; }
     Rect old(bgr->tw_area);
-    if (!bgr->hidden) {
-      SDL_BlitSurface(bgr->ontopw->backup,0,topw->win,&old);
-      for (int n=bgr->ontopw-ontop_win+1;n<=ontop_nr;++n) {
-        OnTopWin *otw=ontop_win+n;
-        if (!otw->wb->hidden) {
-          Rect *r1=&otw->wb->tw_area,
-               *clip=calc_overlap(&old,r1);
-          if (clip) {
-            Rect c1(clip->x-r1->x,clip->y-r1->y,clip->w,clip->h);
-            SDL_BlitSurface(topw->win,clip,otw->backup,&c1);
-            SDL_BlitSurface(otw->wb->win,&c1,topw->win,clip);
-          }
-        }
-      }
-      SDL_UpdateRects(topw->win,1,&old);
-    }
     if (bgr->move_if_ok(x - mouse_point.x,y - mouse_point.y)) {
-      if (bgr->hidden)
-        SDL_BlitSurface(bgr->ontopw->backup,0,topw->win,&old);
-      else bgr->hidden=true;
+      SDL_BlitSurface(bgr->ontopw->backup,0,topw->win,&old); // erase outline
       SDL_BlitSurface(topw->win,&bgr->tw_area,bgr->ontopw->backup,0);
       SDL_UpdateRects(topw->win,1,&old);
       draw_outline(bgr);
@@ -354,28 +339,28 @@ Int2::Int2():x(0),y(0) { }
 Int2::Int2(int x1,int y1):x(x1),y(y1) { }
 bool Int2::operator!=(Int2 b) { return x!=b.x || y!=b.y; }
 
-Id::Id(int _id1):id1(_id1),id2(0) { }
-Id::Id(int _id1,int _id2):id1(_id1),id2(_id2) { }
-
 Label::Label(const char* t):
   render_t(draw_ttf),
   draw_cmd(0),
-  str(t) {
+  str(t),
+  id(0) {
 }
-Label::Label(void (*dr)(SDL_Surface *win,int nr,int y_off)):
+Label::Label(void (*dr)(SDL_Surface *win,int,int y_off),int _id):
   render_t(draw_ttf),
   draw_cmd(dr),
-  str(0) {
+  str(0),
+  id(_id) {
 }
-Label::Label(const char *t,void (*dr)(SDL_Surface *win,int nr,int y_off)):
+Label::Label(const char *t,void (*dr)(SDL_Surface *win,int,int y_off),int _id):
   render_t(draw_ttf),
   draw_cmd(dr),
-  str(t) {
+  str(t),
+  id(_id) {
 }
 
-void Label::draw(SDL_Surface *win,int nr,Point pnt) {
+void Label::draw(SDL_Surface *win,Point pnt) {
   if (str) render_t->draw_string(win,str,pnt);
-  if (draw_cmd) draw_cmd(win,nr,pnt.y);
+  if (draw_cmd) draw_cmd(win,id,pnt.y);
 }
 
 Style::Style(int _st):st(_st),param(0),param2(0) { }
@@ -402,7 +387,7 @@ void Color5::set_col(Uint32 fst,Uint32 lst) { // fst, lst e.g.: 0x102030ff, outp
   }
 }
 
-WinBase::WinBase(WinBase *pw,const char *t,int x,int y,int dx,int dy,Uint32 _bgcol,Id _id):
+WinBase::WinBase(WinBase *pw,const char *t,int x,int y,int dx,int dy,Uint32 _bgcol):
     win(0),
     title(0),
     parent(pw),
@@ -416,8 +401,7 @@ WinBase::WinBase(WinBase *pw,const char *t,int x,int y,int dx,int dy,Uint32 _bgc
     lst_child(-1),
     end_child(5),
     bgcol(_bgcol),
-    hidden(false),
-    id(_id) {
+    hidden(false) {
   if (parent) { // parent = 0 if this = topw, or if keep_on_top() will be called
     tw_area.x=area.x+parent->tw_area.x;
     tw_area.y=area.y+parent->tw_area.y;
@@ -623,10 +607,13 @@ void WinBase::draw_gradient(Rect rect,const Color5 *col,bool vertical,bool hollo
 
 void set_text(char *&txt,const char *form,...) {
   if (!txt) txt=new char[LBMAX];
+  if (form) {
   va_list ap;
   va_start(ap,form);
   vsnprintf(txt,LBMAX,form,ap);
   va_end(ap);
+  }
+  else txt[0]=0;
 }
 
 SDL_Surface *create_pixmap(const char* pm_data[]) {
@@ -724,10 +711,11 @@ SDL_Cursor *init_system_cursor(const char *image[]) {
   return SDL_CreateCursor(data, mask, 32, 32, hot_x, hot_y);
 }
 
-TopWin::TopWin(const char* wm_title,Rect rect,Uint32 init_flag,Uint32 vflag,void (*draw_cmd)(),void (*set_icon)()):
-    WinBase(0,0,0,0,rect.w,rect.h,cBackground,0),
-    display_cmd(draw_cmd) {
-  if (SDL_Init(init_flag) < 0) err("SDL init problem");
+TopWin::TopWin(const char* wm_title,Rect rect,Uint32 init_flag,Uint32 vflag,void (*disp_cmd)(),void (*set_icon)()):
+    WinBase(0,0,0,0,rect.w,rect.h,0),
+    display_cmd(disp_cmd) {
+  if (SDL_Init(SDL_INIT_TIMER|SDL_INIT_VIDEO) < 0) err("SDL init problem");
+//  if (SDL_Init(init_flag) < 0) err("SDL init problem");
   if (TTF_Init() < 0) err("SDL ttf init problem");
   if (!(title_font=TTF_OpenFont(FONTPATH,nominal_font_size+1)))  // fontpath from config.h
     err("font-spec %s not found",FONTPATH);
@@ -774,7 +762,7 @@ TopWin::TopWin(const char* wm_title,Rect rect,Uint32 init_flag,Uint32 vflag,void
   cBackground  = calc_col(background);
   cSelRBut     = calc_color(0xe7e760); // selected radiobutton
   cSelCmdMenu  = calc_color(0xb0b0ff); // selected cmd menu item
-  cPointer     = calc_color(0xff8080);
+  cPointer     = calc_color(0xff7d7d);
   cPointer1    = calc_col(pointer1);
   cPointer2    = cPointer1;
   cGradientBlue.set_col    (0xf0ffffff,0xa0d0e0ff);
@@ -800,13 +788,13 @@ BgrWin::BgrWin(WinBase *pw,
                void (*do_cmd)(BgrWin*,int,int,int),
                void (*mo_cmd)(BgrWin*,int,int,int),
                void (*u_cmd)(BgrWin*,int,int,int),
-               Uint32 _bgcol,
-               Id _id):
-  WinBase(pw,tit,rect.x,rect.y,rect.w,rect.h,_bgcol,_id),
+               Uint32 _bgcol,int _id):
+  WinBase(pw,tit,rect.x,rect.y,rect.w,rect.h,_bgcol),
           display_cmd(dis_cmd),
           down_cmd(do_cmd),
           moved_cmd(mo_cmd),
-          up_cmd(u_cmd) {
+          up_cmd(u_cmd),
+          id(_id) {
 }
 
 void BgrWin::draw() {
@@ -815,8 +803,8 @@ void BgrWin::draw() {
 }
 
 HSlider::HSlider(WinBase *pw,Style st,Rect rect,int minval,int maxval,
-        const char* tit,void (*_cmd)(HSlider*,int fire,bool rel),Id _id):
-    WinBase(pw,tit,rect.x,rect.y,rect.w,9+TDIST,0,_id),
+        const char* tit,void (*_cmd)(HSlider*,int fire,bool rel),bool _rel_cmd):
+    WinBase(pw,tit,rect.x,rect.y,rect.w,12+TDIST,0),
     sdx(rect.w-8),
     minv(minval),maxv(max(minval+1,maxval)),
     def_data(minval),
@@ -825,7 +813,8 @@ HSlider::HSlider(WinBase *pw,Style st,Rect rect,int minval,int maxval,
     lab_right(0),
     text(0),
     style(st),
-    cmd(_cmd) {
+    cmd(_cmd),
+    rel_cmd(_rel_cmd) {
 }
 
 static void draw_text(Rect *txt_rect,const char *text,WinBase *parent) {
@@ -862,18 +851,18 @@ void HSlider::draw() {
       break;
   }
   if (text)
-    draw_ttf->draw_string(win,text,Point((tw_area.w-draw_ttf->text_width(text))/2,tw_area.h-14));
+    draw_ttf->draw_string(win,text,Point((tw_area.w-draw_ttf->text_width(text))/2,tw_area.h-TDIST-1));
   if (lab_left)
-    draw_ttf->draw_string(win,lab_left,Point(1,tw_area.h-14));
+    draw_ttf->draw_string(win,lab_left,Point(1,tw_area.h-TDIST-1));
   if (lab_right) {
     int x1=tw_area.w - draw_ttf->text_width(lab_right) - 1;
-    draw_ttf->draw_string(win,lab_right,Point(x1,tw_area.h-14));
+    draw_ttf->draw_string(win,lab_right,Point(x1,tw_area.h-TDIST-1));
   }
 }
 
-void HSlider::set_hsval(int val,int fire,bool do_draw) {
+void HSlider::set_hsval(int val,int fire,bool do_draw,bool rel) {
   *d=val;
-  if (fire && cmd) cmd(this,fire,false);
+  if (fire && cmd) cmd(this,fire,rel);
   if (do_draw)
     draw_blit_upd();
 }
@@ -883,8 +872,8 @@ void HSlider::calc_hslval(int x1) {
 }
 
 VSlider::VSlider(WinBase *pw,Style st,Rect rect,int minval,int maxval,
-        const char* tit,void (*_cmd)(VSlider*,int fire,bool rel),Id _id):
-    WinBase(pw,tit,rect.x,rect.y,10,rect.h,0,_id),
+        const char* tit,void (*_cmd)(VSlider*,int fire,bool rel),bool _rel_cmd):
+    WinBase(pw,tit,rect.x,rect.y,10,rect.h,0),
     sdy(rect.h-8),
     minv(minval),maxv(max(minval+1,maxval)),
     def_data(minval),
@@ -892,6 +881,7 @@ VSlider::VSlider(WinBase *pw,Style st,Rect rect,int minval,int maxval,
     text(0),
     style(st),
     cmd(_cmd),
+    rel_cmd(_rel_cmd),
     txt_rect(rect.x+14,rect.y+tw_area.h/2-5,0,TDIST) {
 }
 
@@ -923,9 +913,9 @@ void VSlider::draw() {
     draw_text(&txt_rect,text,parent);
 }
 
-void VSlider::set_vsval(int val,int fire,bool do_draw) {
+void VSlider::set_vsval(int val,int fire,bool do_draw,bool rel) {
   *d=val;
-  if (fire && cmd) cmd(this,fire,false);
+  if (fire && cmd) cmd(this,fire,rel);
   if (do_draw)
     draw_blit_upd();
 }
@@ -935,15 +925,16 @@ void VSlider::calc_vslval(int y1) {
 }
 
 HVSlider::HVSlider(WinBase *pw,Style st,Rect rect,Int2 minval,Int2 maxval,
-                   const char* tit,void (*_cmd)(HVSlider*,int fire,bool rel),Id _id):
-    WinBase(pw,tit,rect.x,rect.y,rect.w,rect.h,0,_id),
-    sdx(rect.w-10),sdy(rect.h-10-TDIST),
+                   const char* tit,void (*_cmd)(HVSlider*,int fire,bool rel),bool _rel_cmd):
+    WinBase(pw,tit,rect.x,rect.y,rect.w,rect.h,0),
+    sdx(rect.w-10),sdy(rect.h-7-TDIST),
     minv(minval),maxv(maxval),
     def_data(minval),
     d(&def_data),
     text_x(0),text_y(0),
     style(st),
     cmd(_cmd),
+    rel_cmd(_rel_cmd),
     txt_rect(rect.x+tw_area.w+2,rect.y+tw_area.h/2-10,0,TDIST)  {
 }
 
@@ -957,7 +948,7 @@ void HVSlider::draw() {
            sdy - (d->y - minv.y) * sdy / range.y);
   int i;
   const int dx=tw_area.w,
-            dy=tw_area.h-TDIST;
+            dy=tw_area.h-TDIST+3;
   draw_raised(rp(0,0,dx,dy),cSlBackgr,false);
   switch (style.st) {
     case 0:
@@ -991,15 +982,15 @@ void HVSlider::draw() {
 
   if (text_x) {
     int x1=max(0,8+(sdx-draw_ttf->text_width(text_x))/2);
-    draw_ttf->draw_string(win,text_x,Point(x1,tw_area.h-14));
+    draw_ttf->draw_string(win,text_x,Point(x1,tw_area.h-13));
   }
   if (!hidden && text_y)
     draw_text(&txt_rect,text_y,parent);
 }
 
-void HVSlider::set_hvsval(Int2 val,int fire,bool do_draw) {
+void HVSlider::set_hvsval(Int2 val,int fire,bool do_draw,bool rel) {
   *d=val;
-  if (fire && cmd) cmd(this,fire,false);
+  if (fire && cmd) cmd(this,fire,rel);
   if (do_draw)
     draw_blit_upd();
 }
@@ -1044,18 +1035,20 @@ void HVSlider::show() {
 }
 
 Dial::Dial(WinBase *pw,Style st,Rect rect,int minval,int maxval,
-        const char* tit,void (*_cmd)(Dial*,int fire,bool rel),Id _id):
-    WinBase(pw,tit,rect.x,rect.y,rect.w,rect.w,0,_id),
+        const char* tit,void (*_cmd)(Dial*,int fire,bool rel),bool _rel_cmd):
+    WinBase(pw,tit,rect.x,rect.y,rect.w,rect.w,0),
     minv(minval),maxv(max(minval+1,maxval)),
     def_data(minval),
     d(&def_data),
     text(0),
     style(st),
     cmd(_cmd),
+    rel_cmd(_rel_cmd),
     mid(rect.w/2,rect.w/2),
     txt_rect(rect.x+rect.w+3, rect.y+mid.y, 0, 15),
     d_start(0),
-    loc((Point[]){ Point(-2,4), Point(2,4), Point(2,mid.y-1), Point(-2,mid.y-1) }), // pointer
+    loc((Point[]){ Point(-3,6), Point(3,6), Point(1,mid.y-2), Point(-1,mid.y-2) }), // pointer
+    // loc((Point[]){ Point(-2,4), Point(2,4), Point(2,mid.y-1), Point(-2,mid.y-1) }), // pointer
     ang(0) {
   for (int i=0;i<pnt_max;++i) {
     float x=loc[i].x,
@@ -1124,9 +1117,9 @@ void Dial::draw() {
   if (text) draw_text(&txt_rect,text,parent);
 }
 
-void Dial::set_dialval(int val,int fire,bool do_draw) {
+void Dial::set_dialval(int val,int fire,bool do_draw,bool rel) {
   *d=val;
-  if (fire && cmd) cmd(this,fire,false);
+  if (fire && cmd) cmd(this,fire,rel);
   if (do_draw)
     draw_blit_upd();
 }
@@ -1153,8 +1146,8 @@ void Dial::show() {
   }
 }
 
-CheckBox::CheckBox(WinBase *pw,Style st,Rect rect,Label lab,void (*_cmd)(CheckBox*),Id _id):
-    WinBase(pw,0,rect.x,rect.y,rect.w ? rect.w : 14,rect.h ? rect.h : 14,0,_id),
+CheckBox::CheckBox(WinBase *pw,Style st,Rect rect,Label lab,void (*_cmd)(CheckBox*)):
+    WinBase(pw,0,rect.x,rect.y,rect.w ? rect.w : 14,rect.h ? rect.h : 14,0),
     def_val(false),
     d(&def_val),
     label(lab),
@@ -1178,14 +1171,13 @@ void CheckBox::draw() {
         break;
     }
   }
-  Rect os;
   switch (style.st) {
     case 0:  // square 3D
       SDL_FillRect(win,0,parent->bgcol);
       draw_raised(rp(0,1,tw_area.h-2,tw_area.h-2),cGrey7,false);
       if (!pixm.checkbox_pm) pixm.checkbox_pm=create_pixmap(check_xpm);
       if (*d) SDL_BlitSurface(pixm.checkbox_pm,0,win,rp(1,3,0,0));
-      label.draw(win,id.id2,Point(tw_area.h+2,tw_area.h/2-8));
+      label.draw(win,Point(tw_area.h+2,tw_area.h/2-8));
       break;
     case 1:  // round 3D
       SDL_FillRect(win,0,parent->bgcol);
@@ -1193,7 +1185,7 @@ void CheckBox::draw() {
       SDL_BlitSurface(pixm.rbut_pm,0,win,rp(0,1,0,0));
       if (*d)
         filledCircleColor(win,6,7,2,0xff);
-      label.draw(win,id.id2,Point(tw_area.h+2,tw_area.h/2-8));
+      label.draw(win,Point(tw_area.h+2,tw_area.h/2-8));
       break;
   }
 }
@@ -1204,8 +1196,8 @@ void CheckBox::set_cbval(bool val,int fire,bool do_draw) {
   if (fire && cmd) cmd(this);
 }
 
-Button::Button(WinBase *pw,Style st,Rect rect,Label lab,void (*_cmd)(Button*),Id _id):
-    WinBase(pw,0,rect.x,rect.y,rect.w?rect.w:16,rect.h?rect.h:16,0,_id),
+Button::Button(WinBase *pw,Style st,Rect rect,Label lab,void (*_cmd)(Button*),const char *tit):
+    WinBase(pw,tit,rect.x,rect.y,rect.w?rect.w:16,rect.h?rect.h:16,0),
     is_down(false),
     style(st),
     label(lab),
@@ -1213,29 +1205,27 @@ Button::Button(WinBase *pw,Style st,Rect rect,Label lab,void (*_cmd)(Button*),Id
 }
 
 void Button::draw() {
-  if (!win) {
-    switch (style.st) {
-      case 0:  // normal
-        win=SDL_CreateRGBSurface(SDL_SWSURFACE,tw_area.w,tw_area.h,pixdepth,0,0,0,0);
-        break;
-      case 1:  // square, label used as title at rightside
-        win=SDL_CreateRGBSurface(SDL_SWSURFACE,tw_area.h,tw_area.h,pixdepth,0,0,0,0);
-        if (label.str) {
-          title=TTF_RenderText_Blended(def_font,label.str,def_text_col);
-          title_area.set(area.x+tw_area.w+2,area.y+1,title->w,title->h);
-          label.str=0;
-        }
-        break;
-      case 2:  // for menu
-      case 3:  // 2D, no redraw if is_down
-        win=SDL_CreateRGBSurface(SDL_SWSURFACE,tw_area.w,tw_area.h,pixdepth,0,0,0,0);
-        bgcol=parent->bgcol;
-        break;
-      case 4:  // for menu, with variable label
-        win=SDL_CreateRGBSurface(SDL_SWSURFACE,tw_area.w,tw_area.h,pixdepth,0,0,0,0);
-        bgcol=cWhite;
-        break;
-    }
+  bool init=!win;
+  init_gui();
+  switch (style.st) {
+    case 0:  // normal
+      break;
+    case 1:  // square, label used as title at rightside
+      if (init && label.str) {
+        title=TTF_RenderText_Blended(def_font,label.str,def_text_col);
+        title_area.set(area.x+tw_area.w+2,area.y+1,title->w,title->h);
+        label.str=0;
+      }
+      break;
+    case 2:  // for menu
+    case 3:  // 2D, no redraw if is_down
+      if (init) bgcol=parent->bgcol;
+      break;
+    case 4:  // for menu, with variable label
+      bgcol=cWhite;
+      break;
+    default:
+      alert("button style %d?",style.st);
   }
   const Color5 *bcol=int2col5('but',style.param);
   int y=tw_area.h/2-8;
@@ -1245,33 +1235,33 @@ void Button::draw() {
         draw_raised(0,bcol->c[2],false);
       else
         draw_gradient(Rect(0,0,tw_area.w,tw_area.h),bcol);
-      label.draw(win,id.id2,Point(3,y));
+      label.draw(win,Point(3,y));
       break;
     case 1:
       if (is_down)
         draw_raised(rp(0,0,tw_area.h,tw_area.h),bcol->c[2],false);
       else
         draw_gradient(Rect(0,0,tw_area.h,tw_area.h),bcol);
-      label.draw(win,id.id2,Point(3,y));
+      label.draw(win,Point(3,y));
       break;
     case 2: // for menu
       if (is_down) break;
       clear();
-      label.draw(win,id.id2,Point(3,y));
+      label.draw(win,Point(3,y));
       if (style.param==1)
         rectangleColor(win,0,0,tw_area.w-1,tw_area.h-1,grey0);
       break;
     case 3: // 2D, no drawing if is_down
       if (is_down) break;
       clear();
-      label.draw(win,id.id2,Point(3,y));
+      label.draw(win,Point(3,y));
       rectangleColor(win,0,0,tw_area.w-1,tw_area.h-1,grey0);
       break;
     case 4: // for menu, with variable label
       if (is_down) break;
       bgcol=cWhite; // restore bgcol
       clear();
-      label.draw(win,id.id2,Point(3,y));
+      label.draw(win,Point(3,y));
       SDL_FillRect(win,rp(tw_area.w-12,0,12,tw_area.h),parent->bgcol);
       rectangleColor(win,0,0,tw_area.w-1,tw_area.h-1,grey0);
       vlineColor(win,tw_area.w-13,0,tw_area.h-1,grey0);
@@ -1329,42 +1319,63 @@ int RenderText::text_width(const char *s) {
   return wid;
 }
 
+struct UQdat {
+  void(*fun)(int);
+  int par;
+  UQdat(void(*_fun)(int),int _par):fun(_fun),par(_par) { }
+  UQdat():fun(0),par(0) { }
+};
+
 struct UevQueue {  // user-event queue
   int queue_len,
-    (*buffer)[3],
     ptr1,
     ptr2;
+  UQdat *buffer;
   UevQueue():
       queue_len(50),
-      buffer(new int[queue_len][3]),
       ptr1(0),
-      ptr2(0) {
+      ptr2(0),
+      buffer(new UQdat[queue_len]) {
   }
-  void push(int param0,int param1,int param2) {
+  void push(void (*fun)(int),int par) {
     int n=(ptr2+1)%queue_len;
     if (n==ptr1) {
       printf("push: inc queue-buffer len to: %d\n",2*queue_len);
-      int (*prev)[3]=buffer,
-          i1,i2,i3;
-      buffer=new int[2*queue_len][3];
+      UQdat *prev=buffer;
+      int i1,i2;
+      buffer=new UQdat[2*queue_len];
       for (i1=ptr1,i2=0;i1!=ptr2;i1=(i1+1)%queue_len,++i2)
-        for (i3=0;i3<3;++i3)
-          buffer[i2][i3]=prev[i1][i3];
+        buffer[i2]=prev[i1];
       ptr1=0;
       n=queue_len;
       ptr2=n-1;
       queue_len*=2;
       delete[] prev;
     }
-    buffer[ptr2][0]=param0;
-    buffer[ptr2][1]=param1;
-    buffer[ptr2][2]=param2;
+    buffer[ptr2].fun=fun;
+    buffer[ptr2].par=par;
     ptr2=n;
   }
   bool is_empty() { return ptr1==ptr2; }
-  void pop(int *dat) {
-    for (int i=0;i<3;++i)
-      dat[i]=buffer[ptr1][i];
+  void pop(UQdat *dat) {
+    *dat=buffer[ptr1];
+    ptr1=(ptr1+1)%queue_len;
+  }
+  void pop_2(UQdat *dat) { // not used
+    int nxt_ptr,
+        act_ptr;
+    for (act_ptr=ptr1,nxt_ptr=(ptr1+1)%queue_len;
+         nxt_ptr!=ptr2;
+         act_ptr=nxt_ptr,nxt_ptr=(nxt_ptr+1)%queue_len) {
+      UQdat &nxt_d=buffer[nxt_ptr],
+            &d=buffer[ptr1];
+      if (nxt_d.fun!=d.fun && nxt_d.par!=d.par) {
+        ptr1=act_ptr;
+        break;
+      }
+      //say("queue: skip %p",buffer[ptr1].fun);
+    }
+    *dat=buffer[ptr1];
     ptr1=(ptr1+1)%queue_len;
   }
 } uev_queue;
@@ -1372,12 +1383,12 @@ struct UevQueue {  // user-event queue
 struct Repeat {
   bool on,
        direction;
-  SDL_MouseButtonEvent ev;
+  SDL_Event ev;
 } repeat;
 
-void send_uev(int cmd,int param1,int param2) {
+void send_uev(void (*cmd)(int),int par) {
   SDL_mutexP(mtx);
-  uev_queue.push(cmd,param1,param2);
+  uev_queue.push(cmd,par);
   SDL_CondSignal(cond);
   SDL_mutexV(mtx);
 }
@@ -1442,8 +1453,15 @@ void WinBase::upd(Rect *rect) { // rect w.r.t. topw, win blitted to topw
   SDL_UpdateRects(topw->win,1,rect);
 }
 
-RButWin::RButWin(WinBase *pw,Style st,Rect rect,const char *tit,bool mbz,void(*cmd)(RButWin*,int nr,int fire),Id _id):
-  WinBase(pw,tit,rect.x,rect.y,rect.w,rect.h,cWhite,_id),
+RButWinData::RButWinData():
+    butnr(-1),
+    rb_max(20),
+    but(new RButton[rb_max]),
+    act_button(0) {
+}
+
+RButWin::RButWin(WinBase *pw,Style st,Rect rect,const char *tit,bool mbz,void(*cmd)(RButWin*,int nr,int fire)):
+  WinBase(pw,tit,rect.x,rect.y,rect.w,rect.h,cWhite),
     y_off(0),
     b_dist(st.param2 ? st.param2 : TDIST),
     maybe_z(mbz),
@@ -1454,13 +1472,6 @@ RButWin::RButWin(WinBase *pw,Style st,Rect rect,const char *tit,bool mbz,void(*c
 
 RButWin::~RButWin() {
   delete[] d->but; d->but=0;
-}
-
-RButWinData::RButWinData():
-    butnr(-1),
-    rb_max(20),
-    but(new RButton[rb_max]),
-    act_button(0) {
 }
 
 void RButWin::draw() {
@@ -1493,7 +1504,7 @@ void RButWin::draw_rbutton(RButton *rb) {
   switch (style.st) {
     case 0: // normal
       SDL_FillRect(win,rp(1,y1+1,tw_area.w-2,b_dist-2),rb==d->act_button ? cSelRBut : cButBground);
-      rb->label.draw(win,nr,Point(4,y1));
+      rb->label.draw(win,Point(4,y1));
       break;
     case 1: // with checkboxes
       SDL_FillRect(win,rp(0,y1,tw_area.w,b_dist),parent->bgcol);
@@ -1507,11 +1518,11 @@ void RButWin::draw_rbutton(RButton *rb) {
       }
       if (rb==d->act_button)
         filledCircleColor(win,6,y1+6,2,0xff);
-      rb->label.draw(win,nr,Point(15,y1));
+      rb->label.draw(win,Point(15,y1));
       break;
     case 2: // for menu
       SDL_FillRect(win,rp(1,y1+1,tw_area.w-2,b_dist-2),rb==d->act_button ? cSelCmdMenu : cMenuBground);
-      rb->label.draw(win,nr,Point(4,y1));
+      rb->label.draw(win,Point(4,y1));
       break;
   }
 }
@@ -1527,7 +1538,7 @@ void RButWin::reset() {
 }
 void RButWin::set_rbut(RButton *rb,int fire,bool do_draw) {
   d->act_button=rb;
-  if (fire && rb->cmd) rb->cmd(this,rb-d->but,fire);
+  if (fire) rb_cmd(this,rb - d->but,fire);
   if (do_draw) draw_blit_upd();
 }
 void RButWin::set_rbutnr(int nr,int fire,bool do_draw) {
@@ -1538,32 +1549,136 @@ void RButWin::set_rbutnr(int nr,int fire,bool do_draw) {
       d->act_button=0;
     else
       d->act_button=d->but+nr;
-    if (fire && d->act_button && d->act_button->cmd) d->act_button->cmd(this,d->act_button-d->but,fire);
+    if (fire && d->act_button)
+      rb_cmd(this,d->act_button - d->but,fire);
     if (do_draw) draw_blit_upd();
   }
 }
 
 RButton* RButWin::add_rbut(Label lab) {
   init_gui();
-  RButton *rb;
   int nr=d->next();
   d->but[nr].label=lab;
-  rb=d->but+nr;
+  RButton *rb=d->but+nr;
   if (nr==0 && !maybe_z) d->act_button=rb;
-  rb->cmd=rb_cmd;
   if (sdl_running) draw_rbutton(rb);
   return rb;
 }
+
 int RButWinData::next() {
   if (butnr==rb_max-1) {
     but=re_alloc(but,rb_max);
   }
   return ++butnr;
 }
-RButton::RButton(int nr1,Label lab):
+
+RButton::RButton(Label lab):
   label(lab) {
 }
 RButton::RButton():label(0,0) {
+}
+
+RButtons::RButtons(WinBase *pw,Style st,Rect rect,const char *tit,bool mbz,void(*cmd)(RButtons*,int nr,int fire)):
+  WinBase(pw,tit,rect.x,rect.y,rect.w,rect.h,cWhite),
+    def_button(-1),
+    d(&def_button),
+    butnr(-1),
+    rb_max(10),
+    y_off(0),
+    but(new RButton[rb_max]),
+    b_dist(st.param2 ? st.param2 : TDIST),
+    maybe_z(mbz),
+    rb_cmd(cmd),
+    style(st) {
+}
+
+RButtons::~RButtons() {
+  delete[] but; but=0;
+}
+
+void RButtons::reset() {
+  *d=-1; y_off=0; butnr=-1;
+}
+
+void RButtons::draw() {
+  init_gui();
+  switch (style.st) {
+    case 0: // normal
+      draw_raised(0,cButBground,false);
+      break;
+    case 1: // checkboxes
+      clear();
+      break;
+    case 2: // for menu
+      clear();
+      rectangleColor(win,0,0,tw_area.w-1,tw_area.h-1,grey0);
+      break;
+  }
+  for (int i=0;i<=butnr;++i) draw_rbutton(but+i);
+};
+
+RButton* RButtons::is_in_rbutton(SDL_MouseButtonEvent *ev) {
+  int nr=(ev->y-tw_area.y + y_off)/b_dist;
+  if (nr>butnr) return 0;
+  return but+max(0,nr);
+}
+
+void RButtons::draw_rbutton(RButton *rb) {
+  int nr=rb-but,
+      y1=nr*b_dist-y_off;
+  if (y1<0 || y1>=tw_area.h) return;
+  switch (style.st) {
+    case 0: // normal
+      SDL_FillRect(win,rp(1,y1+1,tw_area.w-2,b_dist-2),rb==but+ *d ? cSelRBut : cButBground);
+      rb->label.draw(win,Point(4,y1));
+      break;
+    case 1: // with checkboxes
+      SDL_FillRect(win,rp(0,y1,tw_area.w,b_dist),parent->bgcol);
+      switch(style.param) {
+        case 1:  // square
+          draw_raised(rp(0,y1,12,12),cButBground,false);
+          break;
+        default: // round
+          if (!pixm.rbut_pm) pixm.rbut_pm=create_pixmap(rbut_pm);
+          SDL_BlitSurface(pixm.rbut_pm,0,win,rp(0,y1,0,0));
+      }
+      if (rb==but+ *d)
+        filledCircleColor(win,6,y1+6,2,0xff);
+      rb->label.draw(win,Point(15,y1));
+      break;
+    case 2: // for menu
+      SDL_FillRect(win,rp(1,y1+1,tw_area.w-2,b_dist-2),rb==but+ *d ? cSelCmdMenu : cMenuBground);
+      rb->label.draw(win,Point(4,y1));
+      break;
+  }
+}
+
+int& RButtons::value() { return *d; }
+
+void RButtons::set_rbutnr(int nr,int fire,bool do_draw) {
+  if (nr>butnr) {
+    alert("set_rbutnr: bad index %d",nr); return;
+  }
+  if (nr<0) *d=-1; else *d=nr;
+  if (fire && *d>=0)
+    rb_cmd(this,*d,fire);
+  if (do_draw) draw_blit_upd();
+}
+
+RButton* RButtons::add_rbut(Label lab) {
+  init_gui();
+  int nr=next();
+  but[nr].label=lab;
+  RButton *rb=but+nr;
+  if (sdl_running) draw_rbutton(rb);
+  return rb;
+}
+
+int RButtons::next() {
+  if (butnr==rb_max-1) {
+    but=re_alloc(but,rb_max);
+  }
+  return ++butnr;
 }
 
 ExtRButCtrl::ExtRButCtrl(Style st,void(*cmd)(RExtButton*,bool)):
@@ -1578,13 +1693,14 @@ int ExtRButCtrl::next() {
   return ++butnr;
 }
 
-RExtButton::RExtButton(WinBase *pw,Style st,Rect rect,Label lab,Id _id):
-    WinBase(pw,0,rect.x,rect.y,rect.w?rect.w:16,rect.h?rect.h:16,0,_id),
+RExtButton::RExtButton(WinBase *pw,Style st,Rect rect,Label lab,int _id):
+    WinBase(pw,0,rect.x,rect.y,rect.w?rect.w:16,rect.h?rect.h:16,0),
+    id(_id),
     style(st),
     label(lab) {
 }
 
-RExtButton *ExtRButCtrl::add_extrbut(WinBase *pw,Rect rect,Label lab,Id id) {
+RExtButton *ExtRButCtrl::add_extrbut(WinBase *pw,Rect rect,Label lab,int id) {
   RExtButton *rb;
   ++butnr;
   rb=new RExtButton(pw,style,rect,lab,id);
@@ -1621,7 +1737,7 @@ void RExtButton::draw() {
         vlineColor(win,0,0,tw_area.h-1,white);
       else
         hlineColor(win,0,tw_area.w-1,tw_area.h-1,grey0);
-      label.draw(win,id.id2,Point(3,tw_area.h/2-7));
+      label.draw(win,Point(3,tw_area.h/2-7));
       break;
     case 1:
     case 2:
@@ -1636,13 +1752,13 @@ void RExtButton::draw() {
         rectangleColor(win,0,0,tw_area.w-2,tw_area.h-2,white);
         rectangleColor(win,1,1,tw_area.w-1,tw_area.h-1,grey0);
       }
-      label.draw(win,id.id2,Point(3,tw_area.h/2-8));
+      label.draw(win,Point(3,tw_area.h/2-8));
       break;
   }
 }
 
-TextWin::TextWin(WinBase *pw,Style st,Rect rect,int lm,const char *t,Id _id):
-    WinBase(pw,t,rect.x,rect.y,rect.w,rect.h?rect.h:lm*TDIST+4,cWhite,_id),
+TextWin::TextWin(WinBase *pw,Style st,Rect rect,int lm,const char *t):
+    WinBase(pw,t,rect.x,rect.y,rect.w,rect.h?rect.h:lm*TDIST+4,cWhite),
     linenr(-1),
     lmax(lm),
     style(st),
@@ -1685,27 +1801,27 @@ void TextWin::draw() {
   }
 }
 
-HScrollbar::HScrollbar(WinBase *pw,Style st,Rect rect,int r,void (*_cmd)(HScrollbar*,int,int),Id _id):
-    WinBase(pw,0,rect.x,rect.y,rect.w,rect.h ? rect.h : 12,cSlBackgr,_id),
+HScrollbar::HScrollbar(WinBase *pw,Style st,Rect rect,int r,void (*_cmd)(HScrollbar*)):
+    WinBase(pw,0,rect.x,rect.y,rect.w,rect.h ? rect.h : 12,cSlBackgr),
     p0(0),xpos(0),value(0),
     style(st),
     ssdim(style.st==1 ? 12 : 0),
     cmd(_cmd) {
   if (!style.param2) style.param2=5; // step if repeat
-  calc_params(r);
+  if (r>0) calc_params(r);
 }
 
 void HScrollbar::calc_params(int r) {
   range=max(tw_area.w-2*ssdim,r-2*ssdim);
-  wid=max(2,(tw_area.w-2*ssdim) * (tw_area.w-2*ssdim) / range);
+  wid=max(6,(tw_area.w-2*ssdim) * (tw_area.w-2*ssdim) / range);
 }
 
-void HScrollbar::set_range(int r) {
+void HScrollbar::set_range(int r,bool update) {
   calc_params(r);
   int xp=minmax(0,value*(tw_area.w-2*ssdim)/range,tw_area.w-2*ssdim-wid);
   p0-=xpos-xp;
   xpos=xp;
-  draw_blit_upd();
+  if (update) draw_blit_upd();
 }
 
 void HScrollbar::draw() {
@@ -1735,7 +1851,7 @@ void HScrollbar::inc_value(bool incr) {
     xp=val*(tw_area.w-2*ssdim)/range;
   }
   value=val;
-  if (cmd) cmd(this,value,range);
+  if (cmd) cmd(this);
   if (xp!=xpos) {
     xpos=xp;
     draw_blit_upd();
@@ -1749,16 +1865,13 @@ void HScrollbar::calc_xpos(int newx) {
     xpos=xp;
     value=xpos * range / (tw_area.w-2*ssdim);
     draw_blit_upd();
-    if (cmd) cmd(this,value,range);
+    if (cmd) cmd(this);
   }
 }
 
-void HScrollbar::set_xpos(int newx) {
-  int xp=minmax(0,newx*(tw_area.w-2*ssdim)/range,tw_area.w-2*ssdim-wid);
-  if (xp!=xpos) {
-    xpos=xp;
-    draw_blit_upd();
-  }
+void HScrollbar::set_xpos(int newx,bool update) {
+  xpos=minmax(0,newx*(tw_area.w-2*ssdim)/range,tw_area.w-2*ssdim-wid);
+  if (update) draw_blit_upd();
 }
 
 bool HScrollbar::in_ss_area(SDL_MouseButtonEvent *ev,bool *dir) {
@@ -1768,27 +1881,27 @@ bool HScrollbar::in_ss_area(SDL_MouseButtonEvent *ev,bool *dir) {
   return false;
 }
 
-VScrollbar::VScrollbar(WinBase *pw,Style st,Rect rect,int r,void (*_cmd)(VScrollbar*,int,int),Id _id):
-    WinBase(pw,0,rect.x,rect.y,rect.w ? rect.w : 12,rect.h,cSlBackgr,_id),
+VScrollbar::VScrollbar(WinBase *pw,Style st,Rect rect,int r,void (*_cmd)(VScrollbar*)):
+    WinBase(pw,0,rect.x,rect.y,rect.w ? rect.w : 12,rect.h,cSlBackgr),
     p0(0),ypos(0),value(0),
     style(st),
-    ssdim(style.st==1 ? 10 : 0),
+    ssdim(style.st==1 ? 12 : 0),
     cmd(_cmd) {
   if (!style.param2) style.param2=5; // step if repeat
-  calc_params(r);
+  if (r>0) calc_params(r);
 }
 
-void VScrollbar::set_range(int r) {
+void VScrollbar::set_range(int r,bool update) {
   calc_params(r);
   int yp=minmax(0,value*(tw_area.h-2*ssdim)/range,tw_area.h-2*ssdim-height);
   p0-=ypos-yp;
   ypos=yp;
-  draw_blit_upd();
+  if (update) draw_blit_upd();
 }
 
 void VScrollbar::calc_params(int r) {
   range=max(tw_area.h-2*ssdim,r-2*ssdim);
-  height=max((tw_area.h-2*ssdim) * (tw_area.h-2*ssdim) / range,2);
+  height=max((tw_area.h-2*ssdim) * (tw_area.h-2*ssdim) / range,6);
 }
 
 void VScrollbar::draw() {
@@ -1799,8 +1912,8 @@ void VScrollbar::draw() {
   if (style.st==1) {
     draw_gradient(Rect(0,0,tw_area.w,ssdim),col,true);
     draw_gradient(Rect(0,tw_area.h-ssdim,tw_area.w,ssdim),col,true);
-    filledTrigonColor(win,2,6,8,6,5,2,0xff);
-    filledTrigonColor(win,2,tw_area.h-7,5,tw_area.h-3,8,tw_area.h-7,0xff);
+    filledTrigonColor(win,2,7,8,7,5,3,0xff);
+    filledTrigonColor(win,2,tw_area.h-8,5,tw_area.h-4,8,tw_area.h-8,0xff);
   }
 }
 
@@ -1818,7 +1931,7 @@ void VScrollbar::inc_value(bool incr) {
     yp=val*(tw_area.h-2*ssdim)/range;
   }
   value=val;
-  if (cmd) cmd(this,value,range);
+  if (cmd) cmd(this);
   if (yp!=ypos) {
     ypos=yp;
     draw_blit_upd();
@@ -1832,16 +1945,13 @@ void VScrollbar::calc_ypos(int newy) {
     ypos=yp;
     value=ypos * range / (tw_area.h-2*ssdim);
     draw_blit_upd();
-    if (cmd) cmd(this,value,range);
+    if (cmd) cmd(this);
   }
 }
 
-void VScrollbar::set_ypos(int newy) {
-  int yp=minmax(0,newy*(tw_area.h-2*ssdim)/range,tw_area.h-2*ssdim-height);
-  if (yp!=ypos) {
-    ypos=yp;
-    draw_blit_upd();
-  }
+void VScrollbar::set_ypos(int newy,bool update) {
+  ypos=minmax(0,newy*(tw_area.h-2*ssdim)/range,tw_area.h-2*ssdim-height);
+  if (update) draw_blit_upd();
 }
 
 bool VScrollbar::in_ss_area(SDL_MouseButtonEvent *ev,bool *dir) {
@@ -1883,14 +1993,13 @@ Message::Message(WinBase *pw,Style st,const char* lab,Point top):
     style(st),
     label(lab),
     lab_pt(top),
-    mes_r(0,top.y,0,TDIST+1),
-    bgcol(style.param ? style.param : pw->bgcol) {
-  mes_r.x= label ? draw_ttf->text_width(label)+top.x+2 : top.x;
+    mes_r(label ? draw_ttf->text_width(label)+top.x+2 : top.x,top.y,0,0),
+    custom_ttf(0) {
 }
 
 void Message::draw_label(bool upd) {
-  draw_ttf->draw_string(pwin->win,label,lab_pt);
-  if (upd) pwin->blit_upd(rp(lab_pt.x,lab_pt.y,mes_r.x,14));
+  if (label) draw_ttf->draw_string(pwin->win,label,lab_pt);
+  if (upd) pwin->blit_upd(rp(lab_pt.x,lab_pt.y,mes_r.x,TDIST));
 }
 
 void Message::draw_mes(const char *form,...) {
@@ -1912,35 +2021,51 @@ void Message::draw(const char *form,...) {
 void Message::draw_message(const char *form,va_list ap) {
   char buf[100];
   vsnprintf(buf,100,form,ap);
-  int twid=draw_title_ttf->text_width(buf);
+  int twid;
   switch (style.st) {
     case 0:  // title font
+      twid=draw_title_ttf->text_width(buf);
+      if (!mes_r.w) mes_r.h=TTF_FontHeight(draw_title_ttf->ttf_font);
       if (mes_r.w<twid) mes_r.w=twid;
-      SDL_FillRect(pwin->win,&mes_r,bgcol);
+      pwin->clear(&mes_r);
       draw_title_ttf->draw_string(pwin->win,buf,Point(mes_r.x,mes_r.y));
       break;
     case 1:  // 3D
-      if (mes_r.w<twid+2) mes_r.w=twid+2;
-      pwin->draw_raised(&mes_r,bgcol,false);
-      draw_title_ttf->draw_string(pwin->win,buf,Point(mes_r.x+1,mes_r.y));
+      twid=draw_title_ttf->text_width(buf);
+      if (!mes_r.w) mes_r.h=TTF_FontHeight(draw_title_ttf->ttf_font);
+      if (mes_r.w<twid+4) mes_r.w=twid+4;
+      pwin->draw_raised(&mes_r,style.param,false);
+      draw_title_ttf->draw_string(pwin->win,buf,Point(mes_r.x+2,mes_r.y));
       break;
     case 2:  // regular font
+      twid=draw_ttf->text_width(buf);
+      if (!mes_r.w) mes_r.h=TTF_FontHeight(draw_ttf->ttf_font);
       if (mes_r.w<twid) mes_r.w=twid;
-      SDL_FillRect(pwin->win,&mes_r,bgcol);
+      pwin->clear(&mes_r);
       draw_ttf->draw_string(pwin->win,buf,Point(mes_r.x,mes_r.y));
+      break;
+    case 3:  // custom font
+      twid=custom_ttf->text_width(buf);
+      if (!mes_r.w) mes_r.h=TTF_FontHeight(custom_ttf->ttf_font);
+      if (mes_r.w<twid) mes_r.w=twid;
+      pwin->clear(&mes_r);
+      custom_ttf->draw_string(pwin->win,buf,Point(mes_r.x,mes_r.y));
+      break;
   }
 }
 
 CmdMenu::CmdMenu(Button *_src):
     nr_buttons(0),
+    def_val(-1),
+    d(&def_val),
     sticky(false),
     src(_src),
     buttons(0) {
 }
 
-bool CmdMenu::init(int wid,int nr_b,void (*menu_cmd)(RButWin*,int nr,int fire)) {
+bool CmdMenu::init(int wid,int nr_b,void (*menu_cmd)(RButtons*,int nr,int fire)) {
   if (the_menu) { the_menu->mclose(); the_menu=0; }
-  if (buttons) return false;
+  if (buttons) { alert("CmdMenu re-init?"); return false; }
   nr_buttons=nr_b;
   src->bgcol=cSelCmdMenu;
   int bdist=src->style.param2 ? src->style.param2 : TDIST,
@@ -1956,27 +2081,28 @@ bool CmdMenu::init(int wid,int nr_b,void (*menu_cmd)(RButWin*,int nr,int fire)) 
   else if (left+wid>topw->tw_area.w)
     left=src->area.x+src->tw_area.w-wid;
   mrect.set(left,top,wid,height);
-  buttons=new RButWin(0,Style(2,0,bdist),mrect,0,!sticky,menu_cmd,src->id);
+  buttons=new RButtons(0,Style(2,0,bdist),mrect,0,false,menu_cmd);
+  // maybe_z must be false, else *buttons->d is set to -1 if re-clicked
   buttons->keep_on_top();
   buttons->bgcol=cMenuBground;
+  buttons->d=d;
   buttons->draw();
   the_menu_tmp=this;
   return true;
 }
 
 RButton *CmdMenu::add_mbut(Label lab) {
-  if (buttons->d->butnr<=nr_buttons-2) {
+  if (buttons->butnr<=nr_buttons-2) {
     RButton *rb=buttons->add_rbut(lab);
-    int nrb=buttons->d->butnr;
-    if (nrb==nr_buttons-1) {
+    if (buttons->butnr==nr_buttons-1)
       buttons->blit_upd(); // draw already done
-      buttons->maybe_z=!sticky;
-    }
     return rb;
   }
   alert("add_mbut: > %d buttons",nr_buttons);
   return 0;
 }
+
+int& CmdMenu::value() { return *d; }
 
 void CmdMenu::mclose() {
   src->bgcol=src->parent->bgcol;
@@ -2030,7 +2156,7 @@ void WinBase::border(WinBase *child,int wid) {  // default: wid=1
       break;
     case 2:
       rectangleColor(win,r.x-2,r.y-2,r.x+r.w+1,r.y+r.h+1,white);
-      rectangleColor(win,r.x-1,r.y-1,r.x+r.w+1,r.y+r.h+1,grey0);
+      rectangleColor(win,r.x-1,r.y-1,r.x+r.w+2,r.y+r.h+2,grey0);
       break;
     case 3:
       rectangleColor(win,r.x-3,r.y-3,r.x+r.w+1,r.y+r.h+1,white);
@@ -2126,10 +2252,9 @@ struct Line {
   }
   void reset() { data[0]=0; dlen=leftside=0; }
   void insert_char(int ks,int& n) {
-    int i;
     if (dlen>=dmax-1) data=re_alloc(data,dmax);
-    for (i=dlen;i>n;--i) data[i]=data[i-1];
-    data[i]=ks;
+    for (int i=dlen;i>n;--i) data[i]=data[i-1];
+    data[n]=ks;
     ++dlen; ++n; data[dlen]=0;
   }
   void rm_char(int& n) {
@@ -2150,8 +2275,8 @@ struct Line {
   }
 };
 
-DialogWin::DialogWin(WinBase *pw,Rect rect,Id _id):
-    WinBase(pw,0,rect.x,rect.y,rect.w,2*TDIST+2,pw->bgcol,_id),
+DialogWin::DialogWin(WinBase *pw,Rect rect):
+    WinBase(pw,0,rect.x,rect.y,rect.w,2*TDIST+2,pw->bgcol),
     textr(0,TDIST,rect.w,TDIST+2),
     cursor(-1),
     label(0),
@@ -2212,9 +2337,8 @@ void DialogWin::draw_line() {
   draw_raised(&textr,cButBground,false);
   if (cursor>=0) {
     if (lin->xpos(cursor)>=tw_area.w-rmargin)
-      lin->leftside=cursor - (tw_area.w-rmargin)/char_wid;
-    int x1=lin->xpos(cursor);
-    vlineColor(win,x1,textr.y+2,textr.y+textr.h-2,0xff);
+      lin->leftside=max(0,cursor - (tw_area.w-rmargin)/char_wid);
+    vlineColor(win,lin->xpos(cursor),textr.y+2,textr.y+textr.h-2,0xff);
   }
   draw_mono_ttf->draw_string(win,s+lin->leftside,Point(2,textr.y));
   blit_upd(&textr);
@@ -2248,7 +2372,6 @@ static void lr_shift(int sym,int &ks) {  // left or right shift key
     case '8': ks='*'; break;
     case '9': ks='('; break;
     case '0': ks=')'; break;
-    case ';': ks=':'; break;
     case '-': ks='_'; break;
     case '=': ks='+'; break;
     case '\\': ks='|'; break;
@@ -2258,6 +2381,7 @@ static void lr_shift(int sym,int &ks) {  // left or right shift key
     case ',': ks='<'; break;
     case '.': ks='>'; break;
     case '/': ks='?'; break;
+    case ';': ks=':'; break;
     default:
       if (ks>='a' && ks<='z')
         ks += 'A'-'a';
@@ -2312,8 +2436,8 @@ bool DialogWin::handle_key(SDL_keysym *key) {
   return false;
 }
 
-EditWin::EditWin(WinBase *pw,Rect rect,const char *tit,void (*_cmd)(int ctrl_key,int key,int cmd_id),Id _id):
-    WinBase(pw,tit,rect.x,rect.y,rect.w,rect.h,cWhite,_id),
+EditWin::EditWin(WinBase *pw,Rect rect,const char *tit,void (*_cmd)(int ctrl_key,int key)):
+    WinBase(pw,tit,rect.x,rect.y,rect.w,rect.h,cWhite),
     linenr(-1),
     lmax(10),
     y_off(0),
@@ -2345,15 +2469,15 @@ void EditWin::draw_line(int vpos,bool update) {
   Line *lin=lines[vpos];
   if (cursor.y==vpos && cursor.x>=0) {
     int x1;
+    const int rmargin=15;
     if (lin) {
       if (cursor.x<0)
         lin->leftside=0;
-      if (lin->xpos(cursor.x)>=tw_area.w-10)
-        lin->leftside=cursor.x - (tw_area.w-10)/char_wid;
+      if (lin->xpos(cursor.x)>=tw_area.w-rmargin)
+        lin->leftside=max(0,cursor.x - (tw_area.w-rmargin)/char_wid);
       x1=lin->xpos(cursor.x);
     }
-    else
-      x1=2;
+    else x1=2;
     vlineColor(win,x1,y1,y1+13,0xff);
   }
   if (lin && lin->dlen) {
@@ -2539,7 +2663,7 @@ void EditWin::handle_key(SDL_keysym *key) {
 
   switch (ks1) {
     case SDLK_RETURN:
-      if (cmd) cmd(0,ks1,id.id1);
+      if (cmd) cmd(0,ks1);
       ++linenr;
       if (linenr>=lmax) lines=re_alloc(lines,lmax);
       for (i=linenr;i>cursor.y+1;--i) {
@@ -2565,7 +2689,7 @@ void EditWin::handle_key(SDL_keysym *key) {
     case SDLK_RCTRL:
       break;
     case SDLK_BACKSPACE:
-      if (cmd) cmd(0,ks1,id.id1);
+      if (cmd) cmd(0,ks1);
       if (cursor.x==0) {
         if (cursor.y==0) return;
         if (lines[cursor.y-1]) {
@@ -2641,7 +2765,7 @@ void EditWin::handle_key(SDL_keysym *key) {
       }
       break;
     default:
-      if (cmd) cmd(key->mod,ks1,id.id1);
+      if (cmd) cmd(key->mod,ks1);
       if (ks1>=0x20 && ks1<0x80) {
         if (key->mod==KMOD_LCTRL || key->mod==KMOD_RCTRL) {
           if (ks1==SDLK_d) {
@@ -2680,15 +2804,14 @@ void EditWin::get_info(bool *active,int* nr_lines,int* cursor_ypos,int *nr_chars
 static struct FileChooser *f_chooser;
 
 struct FileChooser {
-  Id id;
   int f_max,d_max,
       dname_nr,fname_nr;
-  void (*callback)(const char* path,Id id);
+  void (*callback)(const char* path);
   char
     **dir_names,
     **f_names;
   BgrWin *bgw;
-  RButWin *buttons;
+  RButtons *buttons;
   VScrollbar *sbar;
   static const int win_h=10*TDIST;  // height
   static void button_cmd(Button*) {
@@ -2705,7 +2828,7 @@ struct FileChooser {
     return strcasecmp(*reinterpret_cast<char* const*>(a),*reinterpret_cast<char* const*>(b));
   }
   void rbw_fch_cmd(int nr);
-  static void rbw_fch_cmd(RButWin*,int nr,int fire) {
+  static void rbw_fch_cmd(RButtons*,int nr,int fire) {
     if (the_menu) { the_menu->mclose(); the_menu=0; }
     f_chooser->rbw_fch_cmd(nr);
   }
@@ -2715,16 +2838,16 @@ struct FileChooser {
     SDL_WM_SetCaption(cur_wdir,0);
     working_dir();
     if (callback)
-      callback(cur_wdir,id); // cur_wdir not free'd
+      callback(cur_wdir); // cur_wdir not free'd
   }
-  static void rbw_wdir_cmd(RButWin*,int nr,int fire) {
+  static void rbw_wdir_cmd(RButtons*,int nr,int fire) {
     if (the_menu) { the_menu->mclose(); the_menu=0; }
     f_chooser->rbw_wdir_cmd(nr);
   }
-  static void scb_cmd(VScrollbar*,int val,int range) {
-    RButWin *rb=f_chooser->buttons;
-    if (rb->y_off/TDIST!=val/TDIST) {
-      rb->y_off=(val/TDIST)*TDIST;
+  static void scb_cmd(VScrollbar* vsb) {
+    RButtons *rb=f_chooser->buttons;
+    if (rb->y_off/TDIST!=vsb->value/TDIST) {
+      rb->y_off=(vsb->value/TDIST)*TDIST;
       rb->draw_blit_upd();
     }
   }
@@ -2752,14 +2875,13 @@ void FileChooser::rbw_fch_cmd(int nr) {
     if (callback) {
       int lst=strlen(fn)-1;
       if (fn[lst]=='@') const_cast<char*>(fn)[lst]=0; // destructive removal of last '@'
-      callback(strdup(fn),id);  // strdup because fn is volatile
+      callback(strdup(fn));  // strdup because fn is volatile
     }
     bgw->hide();
   }
 }
 
 FileChooser::FileChooser():
-    id(0),
     f_max(50),d_max(50),
     dir_names(new char*[d_max]),
     f_names(new char*[f_max]) {
@@ -2768,7 +2890,7 @@ FileChooser::FileChooser():
   new Button(bgw,Style(0,1),Rect(bgw->tw_area.w-20,3,14,13),"X",button_cmd);
   bgw->draw_blit_recur();
   bgw->upd();
-  buttons=new RButWin(bgw,0,Rect(2,2,160,win_h),0,false,0); // will be drawn later
+  buttons=new RButtons(bgw,0,Rect(2,2,160,win_h),0,false,0); // will be drawn later
   sbar=new VScrollbar(bgw,Style(1,0,TDIST),Rect(164,2,0,win_h),0,scb_cmd);
 }
 
@@ -2801,9 +2923,9 @@ bool FileChooser::fill_fname_array(int &dir_nr,int &file_nr) {
     }
   }
   closedir(dp);
-  if (dir_nr>=0)
+  if (dir_nr>1)
     qsort(dir_names,dir_nr+1,sizeof(char*),compare_fn);
-  if (file_nr>=0)
+  if (file_nr>1)
     qsort(f_names,file_nr+1,sizeof(char*),compare_fn);
   return true;
 }
@@ -2836,9 +2958,8 @@ bool FileChooser::fill_dname_array(int &dir_nr) {
 
 void FileChooser::choose_file() {
   int nr;
-  dname_nr=fname_nr=-1;
-  for (int i=0;i<=buttons->d->butnr;++i)
-    free((void*)buttons->d->but[i].label.str); // was assigned by malloc()
+  for (int i=0;i<=buttons->butnr;++i)
+    free((void*)buttons->but[i].label.str); // was assigned by malloc(), in strdup() and add_slash()
   buttons->reset();
   if (!fill_fname_array(dname_nr,fname_nr)) return;
   for (nr=0;nr<=dname_nr;++nr)
@@ -2849,7 +2970,7 @@ void FileChooser::choose_file() {
   int range=(dname_nr+fname_nr+3)*TDIST;
   if (range<win_h) sbar->hide();
   else { sbar->set_range(range); sbar->show(); }
-  buttons->d->act_button=0;
+  *buttons->d=0;
   buttons->draw_blit_upd();
 }
 
@@ -2864,25 +2985,23 @@ void FileChooser::working_dir() {
   int range=(dname_nr+1)*TDIST + 10;
   if (range<win_h) sbar->hide();
   else { sbar->set_range(range); sbar->show(); }
-  buttons->d->act_button=0;
+  *buttons->d=-1;
   buttons->draw_blit_upd();
 }
 
-void file_chooser(void (*callb)(const char* path,Id),Id id) {
+void file_chooser(void (*callb)(const char* path)) {
   if (f_chooser) f_chooser->bgw->show();
   else f_chooser=new FileChooser();
   if (the_menu) { the_menu->mclose(); the_menu=0; }
-  f_chooser->id=id;
   f_chooser->buttons->rb_cmd=FileChooser::rbw_fch_cmd;
   f_chooser->callback=callb;
   f_chooser->choose_file();
 }
 
-void working_dir(void (*callb)(const char* path,Id),Id id) {
+void working_dir(void (*callb)(const char* path)) {
   if (f_chooser) f_chooser->bgw->show();
   else f_chooser=new FileChooser();
   if (the_menu) { the_menu->mclose(); the_menu=0; }
-  f_chooser->id=id;
   f_chooser->buttons->rb_cmd=FileChooser::rbw_wdir_cmd;
   f_chooser->callback=callb;
   f_chooser->working_dir();
@@ -2910,6 +3029,7 @@ void handle_events(SDL_Event *ev) {
    static VScrollbar *vscr=0;
    static BgrWin *bgw;
    RButWin *rbw=0;
+   RButtons *rbuts=0;
    switch (ev->type) {
      case SDL_MOUSEBUTTONDOWN: { 
          wb=topw->in_a_win(mbe->x,mbe->y);
@@ -2963,20 +3083,33 @@ void handle_events(SDL_Event *ev) {
              else
                rbw->d->act_button=rb;
              rbw->draw_blit_upd(); // if used in menu, draw before calling rb->cmd()
-             if (rb->cmd) {
-               int nr=rbw->d->act_button ? rb-rbw->d->but : -1;
-               if (the_menu && !the_menu->sticky) { // mclose() can't be used here
-                 Button *src=the_menu->src;
-                 src->bgcol=src->parent->bgcol;
-                 src->draw_blit_upd();
-                 the_menu->buttons->hide();
-               }
-               rb->cmd(rbw,nr,fire);
-               if (the_menu && !the_menu->sticky) {
-                 delete the_menu->buttons;
-                 the_menu->buttons=0;
-                 the_menu=0;
-               }
+             int nr=rbw->d->act_button ? rb - rbw->d->but : -1;
+             if (rbw->rb_cmd) rbw->rb_cmd(rbw,nr,fire);
+           }
+         }
+         else if ((rbuts=dynamic_cast<RButtons*>(wb))!=0) {
+           RButton *rb=rbuts->is_in_rbutton(mbe);
+           if (rb) {
+             int fire=1;
+             if (rb==rbuts->but+ *rbuts->d) {
+               fire=0;
+               if (rbuts->maybe_z) // toggle active rbutton
+                 *rbuts->d=-1;
+             }
+             else
+               *rbuts->d=rb-rbuts->but;
+             rbuts->draw_blit_upd(); // if used in menu, draw before calling rb->cmd()
+             if (the_menu && !the_menu->sticky) { // mclose() can't be used here
+               Button *src=the_menu->src;
+               src->bgcol=src->parent->bgcol;
+               src->draw_blit_upd();
+               the_menu->buttons->hide();
+             }
+             if (rbuts->rb_cmd) rbuts->rb_cmd(rbuts,*rbuts->d,fire);
+             if (the_menu && !the_menu->sticky) {
+               delete the_menu->buttons;
+               the_menu->buttons=0;
+               the_menu=0;
              }
            }
          }
@@ -3008,43 +3141,35 @@ void handle_events(SDL_Event *ev) {
            }
          }
          else if ((hscr=dynamic_cast<HScrollbar*>(wb))!=0) {
-           if (repeat.on)
+           if (hscr->in_ss_area(mbe,&repeat.direction)) {
+             tick_cnt=0; // send_ticks() will start counting from 0
              hscr->inc_value(repeat.direction);
+             if (!repeat.on) {
+               repeat.ev=*ev;
+               repeat.on=true; // send_ticks() will repeat this event 
+             }
+           }
            else {
-             if (hscr->in_ss_area(mbe,&repeat.direction)) {
-               if (repeat.on)
-                 hscr->inc_value(repeat.direction);
-               else {
-                 repeat.ev=*mbe;
-                 repeat.on=true;
-               }
-             }
-             else {
-               hscr->p0=mbe->x;
-               SDL_EventState(SDL_MOUSEMOTION,SDL_ENABLE);
-             }
+             hscr->p0=mbe->x;
+             SDL_EventState(SDL_MOUSEMOTION,SDL_ENABLE);
            }
          }
          else if ((vscr=dynamic_cast<VScrollbar*>(wb))!=0) {
-           if (repeat.on)
+           if (vscr->in_ss_area(mbe,&repeat.direction)) {
+             tick_cnt=0;
              vscr->inc_value(repeat.direction);
+             if (!repeat.on) {
+               repeat.ev=*ev;
+               repeat.on=true;
+             }
+           }
            else {
-             if (vscr->in_ss_area(mbe,&repeat.direction)) {
-               if (repeat.on)
-                 vscr->inc_value(repeat.direction);
-               else {
-                 repeat.ev=*mbe;
-                 repeat.on=true;
-               }
-             }
-             else {
-               vscr->p0=mbe->y;
-               SDL_EventState(SDL_MOUSEMOTION,SDL_ENABLE);
-             }
+             vscr->p0=mbe->y;
+             SDL_EventState(SDL_MOUSEMOTION,SDL_ENABLE);
            }
            the_cursor.keep=true; // maybe used for edit window
          }
-         if (the_menu && the_menu->buttons && rbw!=the_menu->buttons) {
+         if (the_menu && the_menu->buttons && rbuts!=the_menu->buttons) {
            the_menu->mclose(); the_menu=0;
          }
          if (!the_cursor.keep)
@@ -3117,19 +3242,19 @@ void handle_events(SDL_Event *ev) {
          but=0;
        }
        else if (hsl) {
-         if (hsl->cmd) hsl->cmd(hsl,1,true);
+         if (hsl->cmd && hsl->rel_cmd) hsl->cmd(hsl,1,true);
          hsl=0;
        }
        else if (vsl) {
-         if (vsl->cmd) vsl->cmd(vsl,1,true);
+         if (vsl->cmd && vsl->rel_cmd) vsl->cmd(vsl,1,true);
          vsl=0;
        }
        else if (hvsl) {
-         if (hvsl->cmd) hvsl->cmd(hvsl,1,true);
+         if (hvsl->cmd && hvsl->rel_cmd) hvsl->cmd(hvsl,1,true);
          hvsl=0;
        }
        else if (dial) {
-         if (dial->cmd) dial->cmd(dial,1,true);
+         if (dial->cmd && dial->rel_cmd) dial->cmd(dial,1,true);
          dial=0;
        }
        else if (bgw) {
@@ -3189,15 +3314,16 @@ void handle_events(SDL_Event *ev) {
    }
 }
 
-static void def_handle_uev(int cmd,int par1,int par2) {
-  printf("user event: %d\n",cmd);
-}
-
-int keep_alivefun(void* data) {
+int send_ticks(void* data) {  // keep alive
   while (!quit) {
-    ++go_ticks; // no mutex
-    SDL_Delay(50); 
-    send_uev('go');
+    if (repeat.on && ++tick_cnt==8)
+      send_uev([](int) {  // for click repeat
+        if (repeat.on)
+          handle_events(&repeat.ev);
+      },0);
+    else
+      SDL_CondSignal(cond);
+    SDL_Delay(20); 
   }
   return 0;
 }
@@ -3207,8 +3333,6 @@ static const char *title_string(WinBase *child) {
   static char name[50];
   if (child->title_str)
     snprintf(name,50,"\"%s\"",child->title_str);
-  else if (child->id.id1)
-    sprintf(name,"id=%s",id2s(child->id.id1));
   else name[0]=0;
   if (child==awin::bgr) typ="(alert win)";
   if (!typ) {
@@ -3303,13 +3427,42 @@ void print_h() {
   fflush(stdout);
 }
 
+Lazy::Lazy(void (*_cmd)(int),int _dur):
+    pause(false),
+    cmd_done(false),
+    dur(_dur),
+    cmd(_cmd),
+    mtx(SDL_CreateMutex()),
+    cond(SDL_CreateCond()) {
+  SDL_CreateThread(threadfun,this);
+}
+int Lazy::threadfun(void *laz) { // does not return
+  (reinterpret_cast<Lazy*>(laz))->threadfun();
+  return 0;
+}
+void Lazy::threadfun() {
+  while (true) {
+    SDL_mutexP(mtx);
+    SDL_CondWait(cond,mtx);
+    SDL_mutexV(mtx);
+    SDL_Delay(dur);
+    pause=false;
+    if (cmd && !cmd_done) send_uev(cmd,0);
+  }
+}
+void Lazy::kick() {
+  SDL_mutexP(mtx);
+  SDL_CondSignal(cond);
+  SDL_mutexV(mtx);
+}
+
 void get_events() {
   topw->draw_blit_recur();
   SDL_Flip(topw->win);
   sdl_running=true;
   awin::check_alert();
   SDL_Event ev;
-  SDL_CreateThread(keep_alivefun,0);
+  SDL_CreateThread(send_ticks,0);
   while (!quit) {
     while (true) {
       SDL_mutexP(mtx);
@@ -3317,16 +3470,10 @@ void get_events() {
         SDL_mutexV(mtx);
         break;
       }
-      int uev_dat[3];
-      uev_queue.pop(uev_dat);
+      UQdat uev_dat;
+      uev_queue.pop(&uev_dat);
       SDL_mutexV(mtx);
-      if (!handle_uev) handle_uev=def_handle_uev;
-      if (uev_dat[0]=='go') {
-        if (repeat.on && go_ticks%3==0)  // 3 * 50 ms
-          handle_events(reinterpret_cast<SDL_Event*>(&repeat.ev));
-      }
-      else
-        handle_uev(uev_dat[0],uev_dat[1],uev_dat[2]);
+      uev_dat.fun(uev_dat.par);
     }
     if (SDL_PollEvent(&ev)) {
       if (ev.type==SDL_QUIT) {

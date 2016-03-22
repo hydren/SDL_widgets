@@ -48,15 +48,16 @@ dt {
 <h1>make-waves</h1>
 <h3>Creating unheard noises</h3>
 <img src="mail-adr.gif"><br>
-Last updated: march 2011
+Last updated: jan 2012
 </center>
 <p>
 This program is meant as a demo for the SDL-widgets toolkit, also it could be useful
 for sound designers.
 <p>
 Hitting the <b>play</b> button will start or stop the generation of sound. If sound is playing and you like
-it, then it can be written it to a WAVE file (44100Hz, mono), by clicking the <b>write sound</b> button (which normally
-is hidden). Sound as well as writing is stopped by re-clicking the play button.
+it, then it can be written it to a WAVE file (44100Hz, stereo),
+by clicking the <b>write sound</b> button (which normally is hidden).
+Sound as well as writing is stopped by re-clicking the play button.
 <p>
 There are 4 parts.
 <h2>Waves</h2>
@@ -87,8 +88,8 @@ I don't know the author of. For this project sound was added: what you see is wh
 The red blobs act as "masses", the lines as "springs".
 You can grab one of the masses with the mouse, release it, and see the masses
 and springs moving. Movements in the x direction can be heard from the left speaker, movements in the y
-direction from the right one. The mass with the black dot in it is used for sound output.
-The square green masses are fixed.
+direction from the right one. The mass with the black dot is the pickup point, it is used for sound output.
+The square green masses are fixed. With the middle button any mass can be toggled between fixed and free.
 <p>
 The spring constant and the masses can be modified with a slider, yielding different base frequencies.
 The value of the masses in the x and the y direction can be detuned
@@ -96,7 +97,8 @@ with the <b>x/y asymmetry</b> slider, which may result in interesting interferen
 <p>
 The <b>Input</b> radio button:
 <dl>
-<dt>no input<dd>You move and release the masses with the mouse.</dd>
+<dt>mouse<dd>You move and release the masses with the mouse.</dd>
+<dt>mouse, noise burst<dd>Idem, at that a burst of pink noise is added.</dd>
 <dt>pink noise<dd>At the left fixed mass noise is injected, yielding a steady sound.</dd>
 <dt>feedback<dd>From the mass with the black dot a signal is fed back to the left fixed mass.</dd>
 </dl>
@@ -109,9 +111,8 @@ the audio model, in order to make their decay times equal. If this box is checke
 a low damping too, yielding a visually very long decay time.</dd>
 <dt>non-linear<dd>The spring constants will become dependent on the spring length: longer length &rarr;
 stiffer spring.</dd>
-<dt>open ended<dd>The right-side fixed point is unfixed, and the pickup point is moved to the right.
-This yields a differend sound spectrum.
-<dt>hard attack<dd>After releasing a mass, it will get an initial moving speed.</dd>
+<dt>open ended<dd>The right-side fixed point bcomes movable, and the pickup point is moved to the right.
+This yields a differend sound spectrum.</dd>
 </dl>
 The movement of the masses is softly clipped near the window edges. You can hear that in the
 sound also.
@@ -168,7 +169,9 @@ in function test_filt_cmd(...).
 In the GUI, clicking the <b>play</b> button will generate a 200Hz pulse-formed signal filtered by the current
 filter. The <b>range</b> slider controls the frequency range that is displayed. In its highest
 position the range is 0 - 30000Hz, so it will contain also the Nyquist frequency (equal to half
-of the sampling frequency, which is 44100Hz). To display high-gain filters correctly, checkbox <b>log scale</b>
-can be enabled.
+of the sampling frequency, which is 44100Hz). The Nyquist frequency is indicated by a red line.
+To display high-gain filters correctly, <b>log ampl scale</b> can be checked, in which case
+the logarithm of the amplitude is shown. The frequency
+scale can be shown logarithmically if <b>log freq scale</b> is checked.
 </body>
 </html>

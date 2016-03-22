@@ -1,5 +1,5 @@
 /*  
-    Demo program for SDL-widgets-1.0
+    Demo program for SDL-widgets-2.0
     Copyright 2011-2013 W.Boeke
 
     This program is free software; you can redistribute it and/or
@@ -22,45 +22,61 @@
 #include "dump-wave.h"
 #include "templates.h"
 
-TopWin *top_win;
+static TopWin *top_win;
 
-BgrWin *bview,
-       *infoview,
-       *scoreview,
-       *scope_win;
-TextWin *messages;
-CheckBox *freeze,
-         *low_frict,
-         *ignore,
-         *write_wav,
-         *play_tune;
-Button *play_but,
-       *unselect,
-       *del_sel,
-       *recol_sel;
-ExtRButCtrl *mode_ctr,
-            *tab_ctr,
-            *scv_edit_ctr;
-HScrollbar *sv_scroll;
-HSlider *tempo;
-Lamp *wav_indic;
-Message *txtmes1,*txtmes2,*txtmes3;
-DialogWin *dialog;
-Uint8 *keystate=SDL_GetKeyState(0);
+static BgrWin
+  *bview,
+  *infoview,
+  *scoreview,
+  *scope_win,
+  *pan_view,  // panel
+  *tfer_curve;
+static TextWin
+  *messages;
+static RButtons
+  *voice_col,
+  *tfer_mode;
+static CheckBox
+  *freeze,
+  *ignore,
+  *write_wav;
+static Button
+  *play_but,
+  *unselect,
+  *del_sel,
+  *recol_sel;
+static ExtRButCtrl
+  *mode_ctr,
+  *tab_ctr,
+  *scv_edit_ctr;
+static RExtButton
+  *eb_sved,
+  *eb_ssel,
+  *eb_mmas,
+  *eb_edma,
+  *eb_edsp;
+static HScrollbar *sv_scroll;
+static HSlider *tempo;
+static Lamp *wav_indic;
+static Message
+  *txtmes1,*txtmes2,*txtmes3;
+static DialogWin *dialog;
+
+static Uint8 *keystate=SDL_GetKeyState(0);
 
 enum {
   ePlayMode=1, eEditMass, eEditSpring,
   eWavOutStart, eWavRecording, eWavOutNoAudio,
+  eEndReached, eStopAudio,
   eNote, ePause, eEnd,  // note category
   eIdle, eTracking, eErasing, eTrackingCol, eErasingCol, eCollectSel, eCollectSel1,  // mouse states
-  eMoving,
-  eCopying,
+  eMoving, eCopying, eScroll,
   eEdit, eSelect      // scoreview edit mode
 };
 
 enum { ePlay, eSilent }; // ScSection
 
-const int
+static const int
   bg_w=300,
   bg_h=190,
   SAMPLE_RATE=44100,
@@ -80,51 +96,65 @@ const int
   voice_max=6,
   meter=8;
 
-const float
+static const float
   nominal_friction=0.9,
   radius=10.,
   nom_mass=6.4,
   nominal_springconst=0.05,
   mid_C=261;
 
-bool debug=false,
-     i_am_playing=false;
+static float
+  springconstant=nominal_springconst;
+
+static char
+  mode=ePlayMode,  // bouncy window
+  scv_mode=eEdit,  // scoreview edit mode
+  wav_mode, // eWavRecording, eWavOutNoAudio, eWavOutStart
+  stop_req; // eEndReached, eStopAudio
+
+static bool
+  debug,
+  i_am_playing,
+  play_tune,
+  one_col;  // show only act instr
 
 enum { eBlack_x, eBlack_y, eBlue_x, eBlue_y, eGreen_x, eGreen_y };
-enum { eBlack,eBlue,eGreen };
-const char *col_name[6]={ "black-X","black-Y","blue-X","blue-Y","green-X","green-Y" };
-const Uint32 col2color[voice_max]={ 0xff,0x707070ff,0xffff,0x7070ffff,0xc000ff,0x50ff50ff };
+enum { eBlack, eBlue, eGreen };  // instruments
+static const char *col_name[6]={ "black-X","black-Y","blue-X","blue-Y","green-X","green-Y" };
+static const Uint32 col2color[voice_max]={ 0xff,0x707070ff,0xffff,0x7070ffff,0xc000ff,0x50ff50ff };
 enum {  // panel sliders etc
-  ePizz,eNonl,ePaph,ePnoi,eTun,eAsym,eFric,eLstr,eFb,eAmpl,eTfer,
+  ePizz,eNonl,ePaph,ePnoi,eTun,eAsym,eFric,eLstr,eExl,eAmpl,eTfer,
   ctrl_max // = array length
 };
-const char *tag_name[ctrl_max]={ "pizz","nonl","paph","pnoi","tun","asym","fric","lstr","fb","ampl","tfer" };
+static const char
+  *slider_tag_name[ctrl_max]={ "pizz","nonl","paph","pnoi","tun","asym","fric","lstr","exl","ampl","tfer" },
+  *config_file=0,
+  *cp_paste_buf="/tmp/bb-tmp";
+static int
+  scope_buf1[scope_dim],scope_buf2[scope_dim],
+  act_color=eBlack_x,
+  leftside=0,      // scoreview
+  cur_leftside,    // set when mouse down
+  act_snr,
+  act_instr=0;
 
-const char *config_file=0,
-           *config_out="x.bcy";
+static Uint32
+  cMesBg,  // background color
+  cAlert;
 
-int scope_buf1[scope_dim],scope_buf2[scope_dim],
-    mode=ePlayMode,  // bouncy window
-    wav_mode=0,
-    act_color=eBlack_x,
-    snr_max=nom_snr_max,
-    leftside=0,   // score view
-    scv_mode=eEdit,  // scoreview edit mode
-    act_snr,
-    act_instr=0;
+static void audio_callback(Uint8 *stream, int len);
 
-Uint32 cMesBg;  // background color
+static SDL_Thread
+  *bouncy_thread,
+  *audio_thread,
+  *wav_thread;
 
-float springconstant=nominal_springconst;
+//static SDL_mutex *audio_mtx=SDL_CreateMutex();
 
-void audio_callback(Uint8 *stream, int len);
-
-SDL_Thread *bouncy_thread,
-           *audio_thread,
-           *wav_thread;
-SDL_cond *is_false=SDL_CreateCond();
+static WinBase *CONT[ctrl_max]; // panel sliders and checkboxes
 
 static int min(int a, int b) { return a>b ? b : a; }
+static int max(int a, int b) { return a<b ? b : a; }
 static int minmax(int a, int x, int b) { return x>b ? b : x<a ? a : x; }
 
 struct Node {
@@ -153,6 +183,11 @@ struct Node {
   void reset() {
     spr_end=-1;
   }
+  void cpy(Node& src) { d_x=src.d_x; d_y=src.d_y; }
+  void cpy(Node& old,Node& src,float mix) {
+    d_x=int((1.-mix)*old.d_x+mix*src.d_x);
+    d_y=int((1.-mix)*old.d_y+mix*src.d_y);
+  }
 };
 
 struct Spring {
@@ -167,20 +202,20 @@ struct Spring {
 };
 
 struct Noise {
-  static const int NOISE=100000;
-  float noisebuf[NOISE];
-  float nval() { return (rand() & 0xff)-127.5; }
+  static const int ndim=100000;
+  short pink_buf[ndim];
+  float nval() { return (rand() & 0xff)-127; }
   Noise() {
     const int pre_dim=100;
     float b1=0.,b2=0.,
           white,
           pre_buf[pre_dim];
-    for (int i=-pre_dim;i<NOISE;++i) {
-      white=i<NOISE-pre_dim ?  nval() : pre_buf[i-NOISE+pre_dim];
-      b1 = 0.98 * b1 + white * 0.4;
+    for (int i=-pre_dim;i<ndim;++i) {
+      white=i<ndim-pre_dim ?  nval() : pre_buf[i-ndim+pre_dim];
+      b1 = 0.98 * b1 + white * 0.4; // correct from about 100 Hz
       b2 = 0.6 * b2 + white;
       if (i<0) pre_buf[i+pre_dim]=white;
-      else noisebuf[i] = b1 + b2;
+      else pink_buf[i] = b1 + b2;  // at most +/- 450
     }
   }
 } noise;
@@ -247,7 +282,8 @@ struct NoteBuffer {
   }
 };
 
-static const float
+namespace freq {
+const float
   A=440, Bes=466.2, B=493.9, C=523.3, Cis=554.4, D=587.3,
   Dis=622.3, E=659.3, F=698.5, Fis=740.0, G=784.0, Gis=830.6,
   freqs[sclin_max]= {
@@ -258,21 +294,17 @@ static const float
     B/4,Bes/4,A/4,Gis/8 ,G/8 ,Fis/8 ,F/8 ,E/8 ,Dis/8 ,D/8 ,Cis/8 ,C/8,
     B/8,Bes/8,A/8,Gis/16,G/16,Fis/16,F/16,E/16,Dis/16
   };
-
-static const int // d   c b   a   g   f e
-  line_col[12]=   { 1,0,2,1,0,1,0,1,0,1,1,0 };
+}
 
 struct NoteBuffers {
   NoteBuffer nbuf[voice_max];
-  bool end_reached;
   NoteBuffers() { reset(); }
   void reset() {
     for (int i=0;i<voice_max;i++) nbuf[i].reset();
-    end_reached=false;
   }
   bool fill_note_bufs();
   void add_note(int col,int lnr,int fst_snr,int lst_snr) {
-    nbuf[col].add_note(freqs[lnr],fst_snr,lst_snr);
+    nbuf[col].add_note(freq::freqs[lnr],fst_snr,lst_snr);
   }
   void report(int v) {
     NoteBuffer *nb=nbuf+v;
@@ -302,11 +334,51 @@ struct Mass_Spring { // base class of Bouncy and PhysModel
   void reconnect();
 };
 
-struct Scope {
+namespace scope {
   int pos,
       scope_start;
-  void update(Sint16 *buffer,int i);
-} scope;
+  void draw_curve(SDL_Surface *win,Rect *r,int *buf,int dim,Uint32 color) {
+    int val2=buf[0];
+    pixelColor(win,r->x,val2+r->y,color);
+    for (int i=0;i<dim-1;++i) {
+      int val1=val2;
+      val2=buf[i+1];
+      if (abs(val1-val2)<=1)
+        pixelColor(win,i+1+r->x,val2+r->y,color);
+      else
+        lineColor(win,i+r->x,val1+r->y,i+1+r->x,val2+r->y,color);
+    }
+  }
+  void update(Sint16 *buffer,int i) {  // thread-safe
+    if (scope_start<0) return;
+    if (scope_start==0) {  // set by send_uev()
+      if (i>=2 && ((buffer[i-2]<=0 && buffer[i]>0) || (buffer[i-1]<=0 && buffer[i+1]>0))) {
+        scope_start=1;
+        pos=0;
+      }
+      return;
+    }
+    if (i%8==0) {
+      if (pos<scope_dim) {
+        static const int div=32000/scope_h;
+        scope_buf1[pos]=buffer[i]/div + scope_h;
+        scope_buf2[pos]=buffer[i+1]/div + scope_h;
+        ++pos;
+      }
+      else {
+        scope_start=-1;
+        send_uev([](int){
+          Rect *sr=&scope_win->tw_area;
+          top_win->clear(sr,scope_win->bgcol,false);
+          draw_curve(top_win->win,sr,scope_buf1,scope_dim,0xa000ff); // green
+          draw_curve(top_win->win,sr,scope_buf2,scope_dim,0xd0ff);   // blue
+          scope_win->upd();
+          scope_start=0;
+        },0);
+      }
+    }
+  }
+}
 
 struct Bouncy:Mass_Spring {
   int down,
@@ -316,6 +388,7 @@ struct Bouncy:Mass_Spring {
 };
 
 struct PhysModel:Mass_Spring {
+  int damp_cnt;
   PhysModel(struct Instrument* inst):
       Mass_Spring(inst) {
     friction=1.-(1.-nominal_friction)/2200.;  // 44100 / 20 = 2205
@@ -324,21 +397,24 @@ struct PhysModel:Mass_Spring {
 
 struct Instrument {
   int pickup_left,pickup_right,
-      excite,
+      excite_mass,   // the excited mass
+      tf_mode,
       active_mass,   // the selected mass
       active_spring, // the selected spring
+      excit,         // excitation value
       Nend,
       Send;
-  float ampl,
-        feedb;
+  float ampl;
   Bouncy *bouncy;
   PhysModel *phys_model;
   struct Panel *inst_panel;
   Instrument():
-      pickup_left(1),pickup_right(-1),
-      excite(2),
+      pickup_left(1),pickup_right(2),
+      excite_mass(8),
+      tf_mode(0),
       active_mass(-1),
       active_spring(-1),
+      excit(30),
       Nend(10),
       Send(9),
       ampl(1.),
@@ -350,7 +426,7 @@ struct Instrument {
   void delete_mass();
   void delete_spring();
   void reloc_pickup(int &pickup);
-} *INS[voice_max/2];
+} *INST[voice_max/2];
 
 struct ScSection {
   Uint32 buf;
@@ -411,6 +487,10 @@ struct ScSection {
   }
   bool occ(int col) { return get_c(col) & 1; }
   bool occ(int* c=0) {  // at least 1 color occupied?
+    if (one_col) {
+      for (int col=0;col<voice_max;++col)
+        if (occ(col) && col==act_color) { if (c) *c=col; return true; }
+    }
     for (int col=0;col<voice_max;++col)
       if (occ(col)) { if (c) *c=col; return true; }
     return false;
@@ -433,25 +513,28 @@ struct SectData { // used by struct Selected
 
 struct Selected {
   SLinkedList<SectData> sd_list; 
-  void insert(int lnr,int snr,ScSection *sec) {
+  void to_rose() {
     if (!sd_list.lis) {
       unselect->style.param=4;  // rose background
       unselect->draw_blit_upd();
     }
+  }
+  void to_blue() {
+    if (!sd_list.lis) {
+      unselect->style.param=0;  // blue background
+      unselect->draw_blit_upd();
+    }
+  }
+  void insert(int lnr,int snr,ScSection *sec) {
     sd_list.insert(SectData(lnr,snr,sec));
   }
   void remove(int lnr,int snr) {
     sd_list.remove(SectData(lnr,snr,0));
-    if (!sd_list.lis) {
-      unselect->style.param=0;
-      unselect->draw_blit_upd();
-    }
+    to_blue();
   }
   void reset() {
     sd_list.reset();
-    if (unselect) { // is 0 at startup
-      unselect->style.param=0;
-    }
+    if (unselect) to_blue(); // 0 at startup
   }
   void restore_sel();
   void modify_sel(int);
@@ -489,7 +572,11 @@ struct Score {
   int len,        // number of sections
       lst_sect;   // last written section
   ScSection (*block)[sclin_max];
-  Score();
+  Score():
+    len(40),
+    lst_sect(-1),
+    block(new ScSection[len][sclin_max]) {
+  }
   ScSection* get_section(int lnr,int snr) {
     if (snr>=len) {
       int old_len=len;
@@ -500,7 +587,8 @@ struct Score {
           new_block[i][j]=block[i][j];
       delete[] block;
       block=new_block;
-      sv_scroll->set_range(len*sect_len+20);
+      sv_scroll->set_range(len*sect_len+20,false);
+      sv_scroll->set_xpos(leftside*sect_len);
     }
     return block[snr] + lnr;
   }
@@ -512,39 +600,49 @@ struct Score {
   }
 } *score;
 
-struct ScInfo {
-  Sint8 col,  // eBlack etc.
-        tag,  // eNonl etc.
-        val;
-  ScInfo *next;
-  ScInfo():tag(-1),next(0) { }
-  ScInfo(int _col,int _tag):col(_col),tag(_tag),next(0) { }
-  ~ScInfo() { delete next; }
-  bool operator==(ScInfo& inf) { return tag==inf.tag && col==inf.col; }
-  void add(ScInfo& info) {
-    ScInfo *sci;
-    if (tag<0) *this=info;
+union WValue {
+  bool b;
+  int i;
+  WValue():i(0){ }
+};
+
+struct InfoVal {
+  Sint8 instr,  // eBlack etc.
+        slider_tag; // eNonl etc.
+  WValue val;
+  InfoVal *next;
+  InfoVal():slider_tag(-1),next(0) { }
+  InfoVal(int col,int tag):instr(col),slider_tag(tag),next(0) { }
+  ~InfoVal() { delete next; }
+  bool operator==(InfoVal& inf) { return slider_tag==inf.slider_tag && instr==inf.instr; }
+  void add(InfoVal& info) {
+    InfoVal *sci;
+    if (slider_tag<0) *this=info;
     else {
       for (sci=this;sci->next;sci=sci->next) 
         if (*sci==info) { val=info.val; return; }
-      sci->next=new ScInfo(info);
+      sci->next=new InfoVal(info);
     }
   }
   void reset() {
     delete next;
-    tag=-1; next=0;
+    slider_tag=-1; val.i=0; next=0;
   }
 };
 
 struct Info {
   int len,
       lst_info;
-  ScInfo *buf;
-  Info():len(40),lst_info(-1),buf(new(ScInfo[len])) { };
+  InfoVal *buf;
+  Info():
+    len(40),
+    lst_info(-1),
+    buf(new(InfoVal[len])) {
+  };
   void mouse_down(int snr);
-  ScInfo& get(int ind) {
+  InfoVal& get(int ind) {
     while (ind>=len) { // not: re_alloc()
-      ScInfo *new_buf=new ScInfo[len*2];
+      InfoVal *new_buf=new InfoVal[len*2];
       for (int i=0;i<len;++i) { new_buf[i]=buf[i]; buf[i].next=0; }
       delete[] buf;
       buf=new_buf;
@@ -557,169 +655,176 @@ struct Info {
     for (int i=0;i<=lst_info;++i) buf[i].reset();
     lst_info=-1;
   }
-  void remove(int snr,int col) {
-    ScInfo *inf=&get(snr);
-    if (inf->tag<0) return;
-/*
-    for (;inf;) {
-      if (!inf->next->next && inf->next->col==col) { inf->next=0; break; }
-      if (inf->col==col) { 
-       *inf=*inf->next;
-      }
-      else inf=inf->next;
-    }
-    if (inf && inf->col==col && !inf->next) inf->reset();
-*/
-    for (ScInfo *inf1=inf;inf1->next;) {
-      if (inf1->next->col==col) inf1->next=inf1->next->next;
-      else {
-        inf1=inf1->next;
-        if (!inf1) break;
-      }
-    }
-    if (inf->col==col) {
+  void remove(int snr,int col,int tag=-1) {
+    InfoVal *inf=buf+snr;
+    if (inf->instr==col && (tag<0 || inf->slider_tag==tag)) {
       if (inf->next) *inf=*inf->next;
       else inf->reset();
+      return;
     }
+    InfoVal *prev,*inf1;
+    for (prev=inf,inf1=inf->next;inf1;prev=inf1,inf1=inf1->next) {
+      if (inf1->instr==col && (tag<0 || inf1->slider_tag==tag)) {
+        if (inf1->next) *inf1=*inf1->next;
+        else prev->next=0;
+        return;
+      }
+    }
+    // removed item is not deleted, so inf->next stays valid
   }
 } info_buf;
 
 struct Panel {
-  BgrWin *bgw,
-         *tfer_curve;
-  RButWin *voice_col;
-  CheckBox *pizzi,
-           *non_lin,
-           *pu_mode,
-           *pink_noise;
-  RButWin *tfer_mode;
-  HSlider *tuning,
-          *asym_xy,
-          *friction,
-          *low_strength,
-          *feedback;
-  VSlider *ampl;
-  WinBase *CONT[ctrl_max]; // sliders and checkboxes
-  int SET0[ctrl_max],  // settings at time 0
-      SET[ctrl_max];   // actual settings
-  int tf_mode;
-  Panel(Point top,int nr);
-  void reset() {
+  WValue SET0[ctrl_max],  // settings at time 0
+         SET[ctrl_max];   // actual settings
+  Panel();
+  template<class T> bool is_a(T*& ptr,int ind) {
+    return (ptr=dynamic_cast<T*>(CONT[ind])) != 0;
+  }
+  void upd_sliders(int inr) {  // inr = instr nr
+    bool upd= inr==act_instr;
+    const int the_act_instr=act_instr;
+    act_instr=inr;  // used by hsl->cmd() etc.
     for (int i=0;i<ctrl_max;++i) {
-      SET[i]=SET0[i];
       CheckBox *cb;
       HSlider *hsl;
       VSlider *vsl;
-      RButWin *rbw;
-      if (is_a(cb,i) && cb->value()!=SET0[i]) cb->set_cbval(SET0[i],0);
-      else if (is_a(hsl,i) && hsl->value()!=SET0[i]) hsl->set_hsval(SET0[i],1);
-      else if (is_a(vsl,i) && vsl->value()!=SET0[i]) vsl->set_vsval(SET0[i],1);
-      else if (is_a(rbw,i) && rbw->act_rbutnr()!=SET0[i]) rbw->set_rbutnr(SET0[i],1);
+      RButtons *rbw;
+      if (is_a(cb,i))       {
+        cb->d=&SET[i].b;
+        if (cb->cmd) cb->cmd(cb);
+        if (upd) cb->draw_blit_upd();
+      }
+      else if (is_a(hsl,i)) {
+        hsl->d=&SET[i].i;
+        hsl->cmd(hsl,upd,false);
+        if (upd) hsl->draw_blit_upd();
+      }
+      else if (is_a(vsl,i)) {
+        vsl->d=&SET[i].i;
+        vsl->cmd(vsl,upd,false);
+        if (upd) vsl->draw_blit_upd();
+      }
+      else if (is_a(rbw,i)) {
+        rbw->d=&SET[i].i;
+        if (rbw->rb_cmd) rbw->rb_cmd(rbw,rbw->value(),upd);
+        if (upd) rbw->draw_blit_upd();
+      }
     }
+    act_instr=the_act_instr;
+    // afterwards, sliders will be re-connected to act_instr  
   }
-  template<class T> bool is_a(T*& ptr,int e) {
-    return (ptr=dynamic_cast<T*>(CONT[e])) != 0;
-  }
-  void save_settings() {
+  void connect_sliders(bool fire) {
     for (int i=0;i<ctrl_max;++i) {
       CheckBox *cb;
       HSlider *hsl;
-      HSlider *vsl;
-      RButWin *rbw;
-      if (is_a(cb,i)) SET[i]=SET0[i]=cb->value();
-      else if (is_a(hsl,i)) SET[i]=SET0[i]=hsl->value();
-      else if (is_a(vsl,i)) SET[i]=SET0[i]=vsl->value();
-      else if (is_a(rbw,i)) SET[i]=SET0[i]=rbw->act_rbutnr();
+      VSlider *vsl;
+      RButtons *rbw;
+      if (is_a(cb,i))       { cb->d=&SET[i].b; if (cb->cmd) cb->cmd(cb); }
+      else if (is_a(hsl,i)) { hsl->d=&SET[i].i; hsl->cmd(hsl,fire,false); }
+      else if (is_a(vsl,i)) { vsl->d=&SET[i].i; vsl->cmd(vsl,fire,false); }
+      else if (is_a(rbw,i)) { rbw->d=&SET[i].i; if (rbw->rb_cmd) rbw->rb_cmd(rbw,rbw->value(),fire); }
     }
   }
-} *panel[voice_max/2];
+} *PAN[voice_max/2];
 
-void exec_info(int snr,bool do_draw) {
-  ScInfo *inf=&info_buf.get(snr);
-  if (inf->tag<0) return;
+void exec_info(int snr,bool do_draw) { // maybe in audio thread
+  InfoVal *inf=&info_buf.get(snr);
+  if (inf->slider_tag<0) return;
   for (;inf;inf=inf->next) {
-    int col=inf->col;
-    Panel *pan=panel[col];
-    pan->SET[inf->tag]=inf->val;
-    if (do_draw) {
-      CheckBox *cb;
-      HSlider *hsl;
-      VSlider *vsl;
-      RButWin *rbw;
-      if (pan->is_a(cb,inf->tag)) cb->set_cbval(inf->val,1,false);
-      else if (pan->is_a(hsl,inf->tag)) hsl->set_hsval(inf->val,1,false);
-      else if (pan->is_a(vsl,inf->tag)) vsl->set_vsval(inf->val,1,false);
-      else if (pan->is_a(rbw,inf->tag)) rbw->set_rbutnr(inf->val,1,false);
-      send_uev('upd',col,inf->tag);
+    Panel *pan=PAN[inf->instr];
+    pan->SET[inf->slider_tag].i=inf->val.i;
+    const bool upd= inf->instr==act_instr;
+    const int the_act_instr=act_instr;
+    act_instr=inf->instr;  // used by hsl->cmd() etc.
+    CheckBox *cb;
+    HSlider *hsl;
+    VSlider *vsl;
+    RButtons *rbw;
+    if (pan->is_a(cb,inf->slider_tag)) {
+      if (cb->cmd) {
+        cb->d=&pan->SET[inf->slider_tag].b;
+        cb->cmd(cb);
+      }
     }
+    else if (pan->is_a(hsl,inf->slider_tag)) {
+      hsl->d=&pan->SET[inf->slider_tag].i;
+      hsl->cmd(hsl,upd,false);
+    }
+    else if (pan->is_a(vsl,inf->slider_tag)) {
+      vsl->d=&pan->SET[inf->slider_tag].i;
+      vsl->cmd(vsl,upd,false);
+    }
+    else if (pan->is_a(rbw,inf->slider_tag)) {
+      rbw->d=&pan->SET[inf->slider_tag].i;
+      if (rbw->rb_cmd) rbw->rb_cmd(rbw,rbw->value(),upd);
+    }
+    if (do_draw && upd)
+      send_uev([](int ind){
+        CONT[ind]->draw_blit_upd();
+      },inf->slider_tag);
+    act_instr=the_act_instr;
   }
 }
 
-void Info::mouse_down(int snr) {
-  Panel *pan=panel[act_instr];
-  for (int i=0;i<ctrl_max;++i)
-    pan->SET[i]=pan->SET0[i];
+void Info::mouse_down(const int snr) {
+  Panel *pan=PAN[act_instr];
+  int i;
   if (keystate[SDLK_i]) {
     char b[60];
     messages->add_text("Modifications:",false);
     for (int snr1=0;snr1<=info_buf.lst_info;++snr1) {
-      ScInfo *inf=&info_buf.get(snr1);
-      if (inf->tag>=0)
+      InfoVal *inf=&info_buf.get(snr1);
+      if (inf->slider_tag>=0)
         for (;inf;inf=inf->next) {
-          snprintf(b,60,"  %d.%d: instr=%d widget=%s val=%d",snr1/meter,snr1%meter,inf->col,tag_name[inf->tag],inf->val);
+          snprintf(b,60,"  time=%d:%d instr=%d widget=%s val=%d",
+            snr1/meter,snr1%meter,inf->instr,slider_tag_name[inf->slider_tag],inf->val.i);
           messages->add_text(b,false);
         }
     }
-    messages->draw_blit_upd();
+    messages->draw_blit_recur(); messages->upd();
     return;
   }
-  for (int i=0;i<=snr;++i)
-    exec_info(i,false); // restore upto snr
   if (keystate[SDLK_d]) {
-    info_buf.remove(snr,act_color/2);
+    info_buf.remove(snr,act_instr);
+    infoview->draw_blit_upd();
+    return;
   }
-  else {
-    for (int i=0;i<ctrl_max;++i) {
-      bool add=false;
-      CheckBox *cb; HSlider *hsl; VSlider *vsl; RButWin *rbw;
-      if (pan->is_a(cb,i)) {
-        if (pan->SET[i]!=cb->value()) { 
-          add=true;
-          pan->SET[i]=cb->value();
-        }
-      }
-      else if (pan->is_a(hsl,i)) {
-        if (pan->SET[i]!=hsl->value()) { 
-          add=true;
-          pan->SET[i]=hsl->value();
-        }
-      }
-      else if (pan->is_a(vsl,i)) {
-        if (pan->SET[i]!=vsl->value()) { 
-          add=true;
-          pan->SET[i]=vsl->value();
-        }
-      }
-      else if (pan->is_a(rbw,i)) {
-        if (pan->SET[i]!=rbw->act_rbutnr()) { 
-          add=true;
-          pan->SET[i]=rbw->act_rbutnr();
-        }
-      }
-      if (add) {
-        ScInfo info(act_instr,i);
-        info.val=pan->SET[i];
-        info_buf.get(snr).add(info);
-      }
+  WValue SET_act[ctrl_max];
+  for (i=0;i<ctrl_max;++i)
+    SET_act[i]=pan->SET0[i];  // init SET_act
+  for (int snr1=0;snr1<=snr;++snr1) {
+    InfoVal *inf=&info_buf.get(snr1);
+    if (inf->slider_tag<0) continue;
+    for (;inf;inf=inf->next) {
+      if (inf->instr!=act_instr) continue;
+      if (snr1==snr) inf->val.i=pan->SET[inf->slider_tag].i;
+      SET_act[inf->slider_tag].i=inf->val.i;
     }
   }
-  infoview->draw_blit_upd();
-}
-
-Score::Score():
-    len(40),
-    lst_sect(-1),
-    block(new ScSection[len][sclin_max]) {
+  // now SET_act contains last values
+  bool redraw=false;
+  for (i=0;i<ctrl_max;++i) {
+    if (pan->SET[i].i!=SET_act[i].i) {
+      InfoVal info(act_instr,i);
+      info.val=SET_act[i]=pan->SET[i];
+      info_buf.get(snr).add(info);
+      redraw=true;
+    }
+  }
+  for (int snr1=snr+1;snr1<=info_buf.lst_info;++snr1) {
+    InfoVal *inf=&info_buf.get(snr1);
+    if (inf->slider_tag<0) continue;
+    for (;inf;inf=inf->next) {
+      if (inf->instr!=act_instr) continue;
+      if (SET_act[inf->slider_tag].i==inf->val.i) {
+        remove(snr1,inf->instr,inf->slider_tag);
+        redraw=true;
+      }
+      SET_act[inf->slider_tag].i=-99; // not to be used again
+    }
+  }
+  if (redraw) infoview->draw_blit_upd();
 }
 
 void NoteBuffer::omit_sect(int lnr,int snr,int col) { // remove overlapping notes
@@ -751,7 +856,7 @@ bool set_mass_spring(FILE *conf) {
       continue;
     }
     if (1==sscanf(buf,"Instrument=%d",&inr)) {
-      ins=INS[inr];
+      ins=INST[inr];
       for (n=0;n<=ins->Nend;++n) {
         ins->bouncy->nodes[n].reset();
         ins->phys_model->nodes[n].reset();
@@ -793,11 +898,12 @@ bool set_mass_spring(FILE *conf) {
       int lnr,snr,col,dur,stacc;
       if (sdl_running) {
         selected.reset();
-        unselect->draw_blit_upd();
-        score->reset();
+        selected.to_blue();
       }
       while (true) {
-        if (6!=fscanf(conf," L%dS%dc%dd%ds%d%c",&lnr,&snr,&col,&dur,&stacc,&ch)) {
+        int nr=fscanf(conf," L%dS%dc%dd%ds%d%c",&lnr,&snr,&col,&dur,&stacc,&ch);
+        if (nr==0) break; // all notes deleted
+        if (nr!=6) {
           alert("note syntax error");
           return false;
         }
@@ -810,30 +916,33 @@ bool set_mass_spring(FILE *conf) {
         if (ch=='\n') break;
         if (ch!=' ') return false;
       }
-      if (sdl_running) 
+      if (sdl_running) {
         scoreview->draw_blit_upd();
+        infoview->draw_blit_upd();
+      }
     }
     else if (!strcmp(buf,"Settings")) {
-      Panel *pan=panel[inr];
+      Panel *pan=PAN[inr];
       while (true) {
         if (3!=fscanf(conf," %[^=]=%d%c",buf,&n1,&ch)) return false;
-        int *set=panel[inr]->SET,
-            *set0=panel[inr]->SET0;
+        WValue *set=pan->SET,
+               *set0=pan->SET0;
         if (!strcmp(buf,"stsp"));
-        else if (!strcmp(buf,"pizz")) { set0[ePizz]=set[ePizz]=n1; pan->pizzi->set_cbval(n1); }
-        else if (!strcmp(buf,"nonl")) { set0[eNonl]=set[eNonl]=n1; pan->non_lin->set_cbval(n1); }
-        else if (!strcmp(buf,"paph")) { set0[ePaph]=set[ePaph]=n1; pan->pu_mode->set_cbval(n1); }
-        else if (!strcmp(buf,"pnoi")) { set0[ePnoi]=set[ePnoi]=n1; pan->pink_noise->set_cbval(n1); }
-        else if (!strcmp(buf,"tun"))  { set0[eTun]=set[eTun]=n1; pan->tuning->set_hsval(n1); }
-        else if (!strcmp(buf,"asym")) { set0[eAsym]=set[eAsym]=n1; pan->asym_xy->set_hsval(n1); }
-        else if (!strcmp(buf,"fric")) { set0[eFric]=set[eFric]=n1; pan->friction->set_hsval(n1); }
-        else if (!strcmp(buf,"lstr")) { set0[eLstr]=set[eLstr]=n1; pan->low_strength->set_hsval(n1); }
-        else if (!strcmp(buf,"fb"))   { set0[eFb]=set[eFb]=n1; pan->feedback->set_hsval(n1); }
-        else if (!strcmp(buf,"ampl")) { set0[eAmpl]=set[eAmpl]=n1; pan->ampl->set_vsval(n1); }
-        else if (!strcmp(buf,"tfer")) { set0[eTfer]=set[eTfer]=n1; pan->tfer_mode->set_rbutnr(n1); }
+        else if (!strcmp(buf,"pizz")) { set0[ePizz].b=set[ePizz].b=n1; }
+        else if (!strcmp(buf,"nonl")) { set0[eNonl].b=set[eNonl].b=n1; }
+        else if (!strcmp(buf,"paph")) { set0[ePaph].i=set[ePaph].i=n1; }
+        else if (!strcmp(buf,"pnoi")) { set0[ePnoi].b=set[ePnoi].b=n1; }
+        else if (!strcmp(buf,"tun"))  { set0[eTun].i=set[eTun].i=n1; }
+        else if (!strcmp(buf,"asym")) { set0[eAsym].i=set[eAsym].i=n1; }
+        else if (!strcmp(buf,"fric")) { set0[eFric].i=set[eFric].i=n1; }
+        else if (!strcmp(buf,"lstr")) { set0[eLstr].i=set[eLstr].i=n1; }
+        else if (!strcmp(buf,"exl"))  { set0[eExl].i=set[eExl].i=n1; }
+        else if (!strcmp(buf,"ampl")) { set0[eAmpl].i=set[eAmpl].i=n1; }
+        else if (!strcmp(buf,"fb"));
+        else if (!strcmp(buf,"tfer")) { set0[eTfer].i=set[eTfer].i=n1; }
         else if (!strcmp(buf,"pu_l")) ins->pickup_left=n1;
         else if (!strcmp(buf,"pu_r")) ins->pickup_right=n1;
-        else if (!strcmp(buf,"exc")) ins->excite=n1;
+        else if (!strcmp(buf,"exc")) ins->excite_mass=n1;
         else {
           alert("unexpected setting: %s",buf);
           return false;
@@ -841,12 +950,17 @@ bool set_mass_spring(FILE *conf) {
         if (ch=='\n') break;
         if (ch!=' ') return false;
       }
+      if (act_instr==inr && sdl_running) {
+        pan_view->draw_blit_recur(); pan_view->upd();
+      }
     }
     else if (!strcmp(buf,"Modifications")) {
-      while (true) {    // " S%dc%dt%d:%d",snr,inf->col,inf->tag,inf->val);
-        if (5!=fscanf(conf," S%dc%dt%d:%d%c",&n1,&n2,&n3,&n4,&ch)) return false;
-        ScInfo info(n2,n3); 
-        info.val=n4;
+      while (true) {    // " S%dc%dt%d:%d",snr,inf->col,inf->slider_tag,inf->val);
+        int nr=fscanf(conf," S%dc%dt%d:%d%c",&n1,&n2,&n3,&n4,&ch);
+        if (nr==0) break;
+        if (nr!=5) return false;
+        InfoVal info(n2,n3); 
+        info.val.i=n4;
         info_buf.get(n1).add(info);
         if (ch=='\n') break;
         if (ch!=' ') return false;
@@ -866,7 +980,9 @@ static void topw_disp() {
   txtmes1->draw_label();
   txtmes2->draw_label();
   txtmes3->draw_label();
-  draw_ttf->draw_string(top_win->win,"keys: m, c, k, p",Point(tempo->tw_area.x,tempo->tw_area.y-36));
+  draw_ttf->draw_string(top_win->win,"keys: m, c, k, p",Point(eb_sved->tw_area.x,eb_sved->tw_area.y+43));
+  draw_ttf->draw_string(top_win->win,"keys: d, up, down",Point(eb_edma->tw_area.x,eb_edma->tw_area.y+43));
+  draw_ttf->draw_string(top_win->win,"keys: d",Point(eb_edsp->tw_area.x,eb_edsp->tw_area.y+43));
   if (config_file) txtmes3->draw_mes(config_file);
 }
 
@@ -887,7 +1003,7 @@ Mass_Spring::Mass_Spring(Instrument *inst):
 
 void Mass_Spring::reconnect() {
   int i;
-  Instrument *ins=INS[act_instr];
+  Instrument *ins=INST[act_instr];
   for (i=0;i<=ins->Nend;++i)
     nodes[i].reset();
   for (i=0;i<=ins->Send;++i) {
@@ -901,92 +1017,44 @@ Bouncy::Bouncy(Instrument* inst):
     down(0),selected(0),selnode(0) {
 }
 
-void Scope::update(Sint16 *buffer,int i) {
-  if (scope_start<0) return;
-  if (scope_start==0) {  // set by handle_user_event()
-    if (i>=2 && ((buffer[i-2]<=0 && buffer[i]>0) || (buffer[i-1]<=0 && buffer[i+1]>0))) {
-      scope_start=1;
-      pos=0;
-    }
-    return;
-  }
-  if (i%8==0) {
-    if (pos<scope_dim) {
-      static const int div=32000/scope_h;
-      scope_buf1[pos]=buffer[i]/div + scope_h;
-      scope_buf2[pos]=buffer[i+1]/div + scope_h;
-      ++pos;
-    }
-    else {
-      scope_start=-1;
-      send_uev('scop');
-    }
-  }
-}
-
 void right_arrow(SDL_Surface *win,int par,int y_off) {
-  trigonColor(win,6,6,12,10,6,14,0xff);
-}
-void square(SDL_Surface *win,int par,int y_off) {
-  rectangleColor(win,6,7,12,13,0xff0000ff);
+  i_am_playing ? rectangleColor(win,6,7,12,13,0xff0000ff) : trigonColor(win,6,6,12,10,6,14,0xff);
 }
 
 // nbuf = 0 if !play_tune or if this = bouncy
 void Mass_Spring::eval_model(Instrument *inst,NoteBuffer **nbuf,float freq_x,float freq_y) {
   int i,
-      nr,
       note_cat_x= nbuf && nbuf[0]->cur_note ? nbuf[0]->cur_note->cat : 0,
       note_cat_y= nbuf && nbuf[1]->cur_note ? nbuf[1]->cur_note->cat : 0;
-  float val;
   Panel *pan=inst->inst_panel;
-  bool add_x=!nbuf || note_cat_x==eNote,
-       add_y=!nbuf || note_cat_y==eNote,
-       pizzi=pan->pizzi->value();
+  bool pizz= pan->SET[ePizz].b;
   Node *n;
-  for (i=0,nr=0; i <= inst->Nend; i++) {
+  for (i=0; i <= inst->Nend; i++) {
     n=nodes+i;
     n->ax = n->ay = 0;
-    if (!n->fixed) ++nr;
   }
-  bool one_node= nr<2;
-  if (pan->feedback->value()) { // feedback
-    if (inst->pickup_right>0) {
-      val=nodes[inst->pickup_right].d_x;
-      if (!add_x) val *= 0.5;   // sounds better then 0
-      if (fabs(val)<10.)        // feedback to node 0
-        nodes[0].d_x = val * inst->feedb;
-    }
-    else nodes[0].d_x=0;
-    if (inst->pickup_left>0) {
-      val=nodes[inst->pickup_left].d_y;
-      if (!add_y) val *= 0.5;
-      if (fabs(val)<10.)
-        nodes[0].d_y = val * inst->feedb;
-    }
-    else nodes[0].d_y=0;
-  }
-
-  if (pan->pink_noise->value()) {  // pink noise
-    n_ind=(n_ind+1)%Noise::NOISE;
-    int ny=(n_ind+100)%Noise::NOISE;
+  if (pan->SET[ePnoi].b) {  // pink noise
+    n_ind=(n_ind+1)%Noise::ndim;
+    bool add_x=!nbuf || note_cat_x==eNote,
+         add_y=!nbuf || note_cat_y==eNote;
     if (add_x)
-      nodes[inst->excite].d_x += noise.noisebuf[n_ind] * 0.0006;
+      nodes[inst->excite_mass].d_x += noise.pink_buf[n_ind] * 0.0006;
     if (add_y)
-      nodes[inst->excite].d_y += noise.noisebuf[ny] * 0.0006;
+      nodes[inst->excite_mass].d_y += noise.pink_buf[n_ind] * 0.0006;
   }
   for (i = 0; i <= inst->Send; ++i) {
     Spring *s = springs+i;
-    float dx,dy;
-    dx = s->b->d_x - s->a->d_x;
-    dy = s->b->d_y - s->a->d_y;
-    if (pan->non_lin->value()) {
-      float ddy = dy*dy/20;
-      dy += dy>0 ? ddy : -ddy;
-      float dx1 = dx*dx/20;
-      dx += dx>0 ? dx1 : -dx1;
+    float dx = s->b->d_x - s->a->d_x,
+          dy = s->b->d_y - s->a->d_y;
+    if (pan->SET[eNonl].b) {
+      float dd=dx*dx/20;
+      dx += dx>0 ? dd : -dd;
+      dd=dy*dy/20;
+      dy += dy>0 ? dd : -dd;
     }
     float sprc=springconstant*tuning;
     if (s->weak) sprc *= low_sprc;
+    if (s->a->fixed || s->b->fixed) sprc *= 0.5;  // better frequency of the harmonics
     dx *= sprc * freq_x;
     dy *= sprc * freq_y;
     s->a->ax += dx;
@@ -994,70 +1062,22 @@ void Mass_Spring::eval_model(Instrument *inst,NoteBuffer **nbuf,float freq_x,flo
     s->b->ax -= dx;
     s->b->ay -= dy;
   }
-  const float fric_x=nbuf && add_x && !pizzi ? 1.0 : friction,
-              fric_y=nbuf && add_y && !pizzi ? 1.0 : friction;
-  for (i = 1; i <= inst->Nend; ++i) {
+  const float fric_x= note_cat_x==eNote && !pizz ? 0.99999 : stop_req==eEndReached ? 0.999 : friction,
+              fric_y= note_cat_y==eNote && !pizz ? 0.99999 : stop_req==eEndReached ? 0.999 : friction,
+              mult_x=freq_x * asym,
+              mult_y=freq_y / asym;
+  for (i = 0; i <= inst->Nend; ++i) {
     n = nodes+i;
-    if (n==inst->bouncy->selnode || n->fixed)
+    if (n->fixed) {
+      n->d_x=n->d_y=0;
       continue;
-    const float limit=bg_h/2;
-    if (fabs(n->ax)>0.0001 || one_node) { // saves much CPU time  
-      n->vx = (n->vx + n->ax / n->mass / asym * freq_x) * fric_x;
-      n->d_x += n->vx;
-      if (n->d_x>limit) n->d_x=limit;
-      else if (n->d_x<-limit) n->d_x=-limit;
     }
-    if (fabs(n->ay)>0.0001 || one_node) {
-      n->vy = (n->vy + n->ay / n->mass * asym * freq_y) * fric_y;
-      n->d_y += n->vy;
-      if (n->d_y>limit) n->d_y=limit;
-      else if (n->d_y<-limit) n->d_y=-limit;
-    }
-  }
-}
-
-void draw_curve(SDL_Surface *win,Rect *r,int *buf,int dim,Uint32 color) {
-  int val2=buf[0];
-  pixelColor(win,r->x,val2+r->y,color);
-  for (int i=0;i<dim-1;++i) {
-    int val1=val2;
-    val2=buf[i+1];
-    if (abs(val1-val2)<=1)
-      pixelColor(win,i+1+r->x,val2+r->y,color);
-    else
-      lineColor(win,i+r->x,val1+r->y,i+1+r->x,val2+r->y,color);
-  }
-}
-
-void handle_user_event(int cmd,int par1,int par2) {
-  switch (cmd) {
-    case 'upd': // exec_info: send_uev('upd',col,inf->tag);
-      panel[par1]->CONT[par2]->draw_blit_upd();
-      break;
-    case 'bdis': { // from bouncy_threadfun()
-        bview->clear();
-        INS[par1]->draw();
-        bview->blit_upd(0);
-      }
-      break;
-    case 'scop': {
-        Rect *sr=&scope_win->tw_area;
-        top_win->clear(sr,scope_win->bgcol,false);
-        draw_curve(top_win->win,sr,scope_buf1,scope_dim,0xff);
-        draw_curve(top_win->win,sr,scope_buf2,scope_dim,0xd0ff);
-        scope_win->upd();
-        scope.scope_start=0;
-      }
-      break;
-    case 'endr':
-      play_but->label.draw_cmd=right_arrow;
-      play_but->draw();
-      play_but->blit_upd(0);
-      break;
-    case 'csnr': // current snr
-      txtmes2->draw_mes("%d:%d",par1/meter,par1%meter);
-      break;
-    default: puts("uev?");
+    if (fabs(n->ax)>0.0002)
+      n->vx = (n->vx + n->ax / n->mass * mult_x) * fric_x;
+    n->d_x += n->vx;
+    if (fabs(n->ay)>0.0002)
+      n->vy = (n->vy + n->ay / n->mass * mult_y) * fric_y;
+    n->d_y += n->vy;
   }
 }
 
@@ -1084,40 +1104,46 @@ void init_audio() {
 }
 
 int bouncy_threadfun(void* data) {
-  SDL_mutex *bouncy_mtx=SDL_CreateMutex();
   while (true) {
-    SDL_mutexP(bouncy_mtx);
-    SDL_CondWaitTimeout(is_false,bouncy_mtx,50);
-    if (freeze && !freeze->value()) INS[act_instr]->bouncy->eval_model(INS[act_instr],0,1,1);
-    send_uev('bdis',act_instr);
+    SDL_Delay(50);
+    if (freeze && !freeze->value())
+      INST[act_instr]->bouncy->eval_model(INST[act_instr],0,1,1);
+    send_uev([](int){
+      bview->clear();
+      INST[act_instr]->draw();
+      bview->blit_upd(0);
+    },0);
   }
-  SDL_DestroyMutex(bouncy_mtx);
   return 0;
 }
 
 int play_threadfun(void* data) {
-  if (SDL_GetAudioStatus()!=SDL_AUDIO_PLAYING)
+  if (SDL_GetAudioStatus()!=SDL_AUDIO_PLAYING) {
     init_audio();
-  scope.scope_start=0;
-  while (i_am_playing && !nbufs.end_reached) {
-    SDL_Delay(10);
   }
+  scope::scope_start=0;
+  while (stop_req!=eStopAudio)
+    SDL_Delay(10);
+  SDL_CloseAudio();
   i_am_playing=false;
   if (wav_mode==eWavRecording)
-    write_wav->set_cbval(false,1);
-  SDL_CloseAudio();
+    send_uev([](int){ write_wav->set_cbval(false,1); },0);
+  send_uev([](int){ play_but->draw_blit_upd(); },0);
   return 0;
 }
 
 int wav_threadfun(void*) {
-  scope.scope_start=0;
+  scope::scope_start=0;
   Uint8 buf[1024];
-  while (wav_mode && i_am_playing && !nbufs.end_reached) {
+  while (wav_mode && stop_req!=eStopAudio) {
     audio_callback(buf,1024);
     if (!dump_wav((char*)buf,1024)) wav_mode=0;
   }
   i_am_playing=false;
-  write_wav->set_cbval(false,1);
+  send_uev([](int){
+    write_wav->set_cbval(false,1);
+    play_but->draw_blit_upd();
+  },0);
   return 0;
 }
 
@@ -1152,7 +1178,7 @@ bool write_config(FILE *conf) {
   fprintf(conf,"tempo=%d\n",tempo->value());
   for (int nr=0;nr<voice_max/2;++nr) {
     fprintf(conf,"Instrument=%d\n",nr);
-    inst=INS[nr];
+    inst=INST[nr];
     fputs("Nodes\n ",conf);
     n=inst->bouncy->nodes;
     s=inst->bouncy->springs;
@@ -1171,39 +1197,39 @@ bool write_config(FILE *conf) {
       fprintf(conf," %d:a=%d,b=%d,st=%d",i,s[i].a-n,s[i].b-n,s[i].weak);
     putc('\n',conf);
     fputs("Settings\n",conf);
-    Panel *pan=panel[nr];
-    Instrument *ins=INS[nr];
+    Panel *pan=PAN[nr];
+    Instrument *ins=INST[nr];
     fprintf(conf,"  pizz=%d nonl=%d paph=%d pnoi=%d",
-      pan->SET0[ePizz],pan->SET0[eNonl],pan->SET0[ePaph],pan->SET0[ePnoi]);
-    fprintf(conf," tun=%d asym=%d fric=%d lstr=%d fb=%d ampl=%d tfer=%d",
-      pan->tuning->value(),pan->asym_xy->value(),pan->friction->value(),pan->low_strength->value(),
-      pan->feedback->value(),pan->ampl->value(),pan->tfer_mode->act_rbutnr());
-    fprintf(conf," pu_l=%d pu_r=%d exc=%d\n",ins->pickup_left,ins->pickup_right,ins->excite);
+      pan->SET0[ePizz].b,pan->SET0[eNonl].b,pan->SET0[ePaph].i,pan->SET0[ePnoi].b);
+    fprintf(conf," tun=%d asym=%d fric=%d lstr=%d exl=%d ampl=%d tfer=%d",
+      pan->SET0[eTun].i,pan->SET0[eAsym].i,pan->SET0[eFric].i,pan->SET0[eLstr].i,
+      pan->SET0[eExl].i,pan->SET0[eAmpl].i,pan->SET0[eTfer].i);
+    fprintf(conf," pu_l=%d pu_r=%d exc=%d\n",ins->pickup_left,ins->pickup_right,ins->excite_mass);
   }
   if (info_buf.lst_info>=0) {
     bool add_mod=false;
     for (i=0;i<voice_max/2;++i)
       for (int j=0;j<ctrl_max;++j)
-        panel[i]->SET[j]=panel[i]->SET0[j];
+        PAN[i]->SET[j]=PAN[i]->SET0[j];
     for (int snr=0;snr<=info_buf.lst_info;++snr) {
-      ScInfo *inf=&info_buf.get(snr);
-      if (inf->tag>=0) {
-        CheckBox *cb; HSlider *hsl; VSlider *vsl; RButWin *rbw;
+      InfoVal *inf=&info_buf.get(snr);
+      if (inf->slider_tag>=0) {
+        CheckBox *cb; HSlider *hsl; VSlider *vsl; RButtons *rbw;
         for (;inf;inf=inf->next) {  // not write
-          Panel *pan=panel[inf->col];
-          int tag=inf->tag;
+          Panel *pan=PAN[inf->instr];
+          int tag=inf->slider_tag;
           bool add=false;
           if (pan->is_a(cb,tag)) {
-            if (inf->val!=pan->SET[tag]) add=true;
+            if (inf->val.b!=pan->SET[tag].b) add=true;
           }
           else if (pan->is_a(hsl,tag)) {
-            if (inf->val!=pan->SET[tag]) add=true;
+            if (inf->val.i!=pan->SET[tag].i) add=true;
           }
           else if (pan->is_a(vsl,tag)) {
-            if (inf->val!=pan->SET[tag]) add=true;
+            if (inf->val.i!=pan->SET[tag].i) add=true;
           }
           else if (pan->is_a(rbw,tag)) {
-            if (inf->val!=pan->SET[tag]) add=true;
+            if (inf->val.i!=pan->SET[tag].i) add=true;
           }
           if (add) {
             pan->SET[tag]=inf->val;
@@ -1211,7 +1237,7 @@ bool write_config(FILE *conf) {
               add_mod=true;
               fputs("Modifications\n ",conf);
             }
-            fprintf(conf," S%dc%dt%d:%d",snr,inf->col,inf->tag,inf->val);
+            fprintf(conf," S%dc%dt%d:%d",snr,inf->instr,inf->slider_tag,inf->val.i);
           }
         }
       }
@@ -1287,16 +1313,10 @@ bool NoteBuffers::fill_note_bufs() {
       }
     }
   }
-  int i,
-      end_snr=0;
-  for (i=0;i<voice_max;++i)
-    if (end_snr<nbuf[i].end_snr) end_snr=nbuf[i].end_snr;
-  //score->lst_sect=end_snr;  // useful?
-  end_snr+=8; // about 1 measure extra
-  for (i=0;i<voice_max;++i) {  // add eEnd notes
+  for (int i=0;i<voice_max;++i) {  // add eEnd notes
     NoteBuffer *nb=nbuf+i;
     if (nb->cur_note) {
-      nb->add_note(0,end_snr,end_snr);
+      nb->add_note(0,nbuf[i].end_snr+1,nbuf[i].end_snr+1);
       nb->cur_note->cat=eEnd;
       nb->cur_note=nb->notes; // reset cur_note
       if (debug) nbufs.report(i);
@@ -1311,8 +1331,11 @@ void dial_cmd(const char* text,int cmd_id) {
         FILE *conf=fopen(text,"w");
         if (!conf) { alert("%s can't be written",text); break; }
         if (write_config(conf)) {
-          dialog->dialog_label("written");
-          if (strcmp(text,config_out)) config_out=strdup(text);
+          dialog->dialog_label("saved");
+          if (!config_file || strcmp(text,config_file)) {
+            config_file=strdup(text);
+            txtmes3->draw_mes(config_file);
+          }
         }
         fclose(conf);
       }
@@ -1320,19 +1343,15 @@ void dial_cmd(const char* text,int cmd_id) {
     case 'r_cf': {
         FILE *conf=fopen(text,"r");
         if (conf) {
+          score->reset();
+          info_buf.reset();
           if (!set_mass_spring(conf)) {
             alert("error in %s",text); fclose(conf);
             break;
           }
           fclose(conf);
-          dialog->dialog_label("read");
-          if (config_file) {
-            if (strcmp(config_file,text)) {
-              config_file=strdup(text);
-              txtmes3->draw_mes(config_file);
-            }
-          }
-          else {
+          dialog->dialog_label("loaded");
+          if (!config_file || strcmp(config_file,text)) {
             config_file=strdup(text);
             txtmes3->draw_mes(config_file);
           }
@@ -1344,88 +1363,91 @@ void dial_cmd(const char* text,int cmd_id) {
   }
 }
 
-void button_cmd(Button *but) {
-  switch (but->id.id1) {
-    case 'cdef':  // save current settings;
-      info_buf.reset();
-      infoview->draw_blit_upd();
-      for (int i=0;i<voice_max/2;++i) panel[i]->save_settings();
-      break;
-    case 'play':
-      if (i_am_playing) {
-        play_but->label.draw_cmd=right_arrow;
-        i_am_playing=false;
-        SDL_WaitThread(audio_thread,0);
+void play_cmd(Button *but) {
+  if (i_am_playing) {
+    stop_req=eEndReached;
+    if (wav_mode==eWavOutNoAudio)
+      SDL_WaitThread(wav_thread,0);
+    else
+      SDL_WaitThread(audio_thread,0); // sets i_am_playing = false
+    return;
+  }
+  for (int i=0;i<voice_max/2;++i) { // reset phys_model
+    INST[i]->phys_model->damp_cnt=0;
+    for (int j=0;j<=INST[i]->Nend;++j) {
+      Node *n=INST[i]->phys_model->nodes+j;
+      n->d_x=n->d_y=n->vx=n->vy=0;
+    }
+  }
+  nbufs.reset();
+  act_snr=0;
+  if (!ignore->value()) {
+    for (int i=0;i<voice_max/2;++i) {
+      Panel *pan=PAN[i];
+      for (int j=0;j<ctrl_max;++j) pan->SET[j]=pan->SET0[j];
+      for (int snr=0;snr<=leftside;++snr) {
+        InfoVal *inf=&info_buf.get(snr);
+        if (inf->slider_tag<0) continue;
+        for (;inf;inf=inf->next)
+          pan->SET[inf->slider_tag].i=inf->val.i;
       }
-      else {
-        for (int i=0;i<voice_max/2;++i) {
-          Instrument *ins=INS[i];
-          for (int j=0;j<=ins->Nend;++j) {
-            Node *n=ins->phys_model->nodes+j;
-            n->d_x=n->d_y=n->vx=n->vy=0;
-          }
-          if (!ignore->value()) panel[i]->reset();
-        }
-        nbufs.reset();
-        act_snr=0;
-        if (!ignore->value()) exec_info(0,true);
-        if (play_tune->value() && !nbufs.fill_note_bufs())
-          break;
-        i_am_playing=true;
-        play_but->label.draw_cmd=square;
-        if (wav_mode==eWavOutStart) {
-          wav_mode=eWavRecording;
-          wav_indic->set_color(0xff0000ff); // red
-          audio_thread=SDL_CreateThread(play_threadfun,0);
-        }
-        else if (wav_mode==eWavOutNoAudio) {
-          wav_indic->set_color(0xff0000ff); // red
-          wav_thread=SDL_CreateThread(wav_threadfun,0);
-        }
-        else {
-          audio_thread=SDL_CreateThread(play_threadfun,0);
-        }
-      }
-      break;
-    case 'setl':  // set locations
-      for (int i=0;i<=INS[act_instr]->Nend;++i) {
-        Node *n=INS[act_instr]->bouncy->nodes+i;
-        n->nom_x+=n->d_x; n->d_x=0;
-        n->nom_y+=n->d_y; n->d_y=0;
-        n=INS[act_instr]->phys_model->nodes+i;
-        n->nom_x+=n->d_x; n->d_x=0;
-        n->nom_y+=n->d_y; n->d_y=0;
-      }
-      break;
-    case 'resl':  // reset locations
-      for (int i=0;i<=INS[act_instr]->Nend;++i) {
-        Node *n=INS[act_instr]->bouncy->nodes+i;
-        n->d_x=n->d_y=n->vx=n->vy=0;
-        n=INS[act_instr]->phys_model->nodes+i;
-        n->d_x=n->d_y=n->vx=n->vy=0;
-      }
-      break;
-    case 'wrcf':
-      dialog->dialog_label("write project file:",cPointer);
-      dialog->dialog_def(config_out,dial_cmd,'w_cf');
-      break;
-    case 'recf':
-      dialog->dialog_label("load project:",cPointer);
-      dialog->dialog_def(config_out,dial_cmd,'r_cf');
-      break;
-    case 'uns':
-    case 'dels':
-    case 'rcol':
-      selected.modify_sel(but->id.id1);
-      break;
-    default: alert("but_cmd?"); printf("%d\n",but->id.id1);
+      // now SET contains start values
+      pan->upd_sliders(i);
+    }
+    PAN[act_instr]->connect_sliders(false);
+  }
+  if (play_tune && !nbufs.fill_note_bufs())
+    return;
+  i_am_playing=true;
+  stop_req=0;
+  if (wav_mode==eWavOutStart) {
+    wav_mode=eWavRecording;
+    wav_indic->set_color(0xff0000ff); // red
+    audio_thread=SDL_CreateThread(play_threadfun,0);
+  }
+  else if (wav_mode==eWavOutNoAudio) {
+    wav_indic->set_color(0xff0000ff); // red
+    wav_thread=SDL_CreateThread(wav_threadfun,0);
+  }
+  else {
+    audio_thread=SDL_CreateThread(play_threadfun,0);
   }
 }
-
+namespace smooth { // copy node location from bouncy to phys model
+  int phase=0,
+      tim=0;
+  const int delta=100;
+  Node b_nodes[NN],
+       pm_nodes[NN];
+  void smooth(Instrument *instr) {
+    PhysModel *phys_model=instr->phys_model;
+    Bouncy *bouncy=instr->bouncy;
+    if (phase==3) { // set by bouncy_down()
+      Node &nod=instr->phys_model->nodes[instr->excite_mass];
+      nod.d_x=nod.d_y=instr->excit;
+      phase=0;
+    }
+    else if (phase==1) {  // set by bouncy_up()
+      for (int i=0;i<=instr->Nend;++i) {
+        pm_nodes[i].cpy(phys_model->nodes[i]);
+        b_nodes[i].cpy(bouncy->nodes[i]);
+      }
+      phase=2;
+      tim=0;
+    }
+    if (phase==2) {
+      for (int i=0;i<=instr->Nend;++i) {
+        phys_model->nodes[i].cpy(pm_nodes[i],b_nodes[i],float(tim)/delta);
+      }
+      if (++tim==delta) phase=0;
+    }
+  }
+}
 void bouncy_down(BgrWin*,int x,int y,int but) {
   int i,
-      nearest=-1;
-  Instrument *act_ins=INS[act_instr];
+      nearest=-1,
+      dx=0,dy;
+  Instrument *act_ins=INST[act_instr];
   Bouncy *act_bnc=act_ins->bouncy;
   PhysModel *act_pm=act_ins->phys_model;
   act_bnc->down=0;
@@ -1433,8 +1455,8 @@ void bouncy_down(BgrWin*,int x,int y,int but) {
   if (mode==eEditSpring && but!=SDL_BUTTON_RIGHT) // find nearest spring
     for (i=0; i <= act_ins->Send; i++) {
       Spring *s=act_bnc->springs+i;
-      int dx=(s->a->d_x+s->a->nom_x + s->b->d_x+s->b->nom_x)/2 - x,
-          dy=(s->a->d_y+s->a->nom_y + s->b->d_y+s->b->nom_y)/2 - y;
+      dx=(s->a->d_x+s->a->nom_x + s->b->d_x+s->b->nom_x)/2 - x;
+      dy=(s->a->d_y+s->a->nom_y + s->b->d_y+s->b->nom_y)/2 - y;
       if (hypot(dx,dy) < radius) {
         nearest=i;
         break;
@@ -1443,8 +1465,8 @@ void bouncy_down(BgrWin*,int x,int y,int but) {
   else                                   // find nearest mass
     for (i=0; i <= act_ins->Nend; i++) {
       Node *n=act_bnc->nodes+i;
-      int dx=n->d_x+n->nom_x - x,
-          dy=n->d_y+n->nom_y - y;
+      dx=n->d_x+n->nom_x - x;
+      dy=n->d_y+n->nom_y - y;
       if (hypot(dx,dy) < radius) {
         nearest=i;
         break;
@@ -1504,10 +1526,14 @@ void bouncy_down(BgrWin*,int x,int y,int but) {
   case SDL_BUTTON_RIGHT:
     if (nearest>=0) {
       if (mode==ePlayMode) {
-        if (act_ins->pickup_left==nearest) act_ins->pickup_left=-1;
-        else if (act_ins->pickup_right==nearest) act_ins->pickup_right=-1;
-        else if (act_ins->pickup_left>=0) act_ins->pickup_right=nearest;
-        else act_ins->pickup_left=nearest;
+        if (dx>0) {
+          if (act_ins->pickup_left==nearest) act_ins->pickup_left=-1;
+          else act_ins->pickup_left=nearest;
+        }
+        else {
+          if (act_ins->pickup_right==nearest) act_ins->pickup_right=-1;
+          else act_ins->pickup_right=nearest;
+        }
       }
       else if (mode==eEditMass) {
         if (act_ins->active_mass>=0) {
@@ -1521,76 +1547,37 @@ void bouncy_down(BgrWin*,int x,int y,int but) {
         }
       }
       else if (mode==eEditSpring) {
-        act_ins->excite=nearest;
+        act_ins->excite_mass=nearest;
       }
     }
     break;
   }
+  if (nearest>=0 && !(mode==ePlayMode && but==SDL_BUTTON_LEFT)) // mass in physical model excited
+    smooth::phase=3;
 }
 
 void bouncy_moved(BgrWin*,int x,int y,int but) {
-  if (INS[act_instr]->bouncy->down == 2 && INS[act_instr]->bouncy->selnode) {
-    Node *n=INS[act_instr]->bouncy->selnode;
+  if (INST[act_instr]->bouncy->down == 2 && INST[act_instr]->bouncy->selnode) {
+    Node *n=INST[act_instr]->bouncy->selnode;
     n->d_x=x - n->nom_x;
     n->d_y=y - n->nom_y;
     //if (hard_attack->value()) bouncy->selnode->vy=y<bg_h ? 10 : -10; 
   }
 }
 
+Bouncy *act_bnc() { return INST[act_instr]->bouncy; }
+PhysModel *act_phm() { return INST[act_instr]->phys_model; }
+
 void bouncy_up(BgrWin*,int x,int y,int but) {
   SDL_EventState(SDL_MOUSEMOTION,SDL_IGNORE);
-  if (INS[act_instr]->bouncy->selnode) {
-    INS[act_instr]->bouncy->selnode=0;
-    for (int i=0;i<=INS[act_instr]->Nend;++i) {
-      INS[act_instr]->phys_model->nodes[i].d_x=INS[act_instr]->bouncy->nodes[i].d_x;
-      INS[act_instr]->phys_model->nodes[i].d_y=INS[act_instr]->bouncy->nodes[i].d_y;
-    }
+  Bouncy *bcy=act_bnc();
+  if (bcy->selnode) { // set by bouncy_down() if mode = ePlayMode
+    smooth::phase=1;
+    bcy->selnode=0;
     if (wav_mode==eWavOutStart) {
       wav_mode=eWavRecording;
       wav_indic->set_color(0xff0000ff); // red
     }
-  }
-}
-
-void checkbox_cmd(CheckBox* chb) {
-  switch (chb->id.id1) {
-    case 'frez':
-      if (!chb->value())
-        for (int i=0;i<=INS[act_instr]->Nend;++i) {
-          INS[act_instr]->phys_model->nodes[i].d_x=INS[act_instr]->bouncy->nodes[i].d_x;
-          INS[act_instr]->phys_model->nodes[i].d_y=INS[act_instr]->bouncy->nodes[i].d_y;
-        }
-      break;
-    case 'lofr':
-      INS[act_instr]->bouncy->friction= chb->value() ? INS[act_instr]->phys_model->friction : nominal_friction;
-      break;
-    case 'wsta': // checkbox write_wav
-      if (chb->value()) {
-        if (!i_am_playing && !play_tune->value()) {
-          alert("if 'play tune' not enabled,"); alert("   then 'playing mode' expected");
-          break;
-        }
-        if (!init_dump_wav("out.wav",2,SAMPLE_RATE)) break;
-        wav_mode= play_tune->value() ? eWavOutNoAudio : eWavOutStart;
-        wav_indic->set_color(0xff00ff); // green
-      }
-      else { 
-        if (!wav_mode) break;
-        close_dump_wav();
-        wav_indic->set_color(0xffffffff);
-        wav_mode=0;
-      }
-      break;
-    case 'pltu': // checkbox play_tune
-      if (i_am_playing) {
-        i_am_playing=false;
-        play_but->label.draw_cmd=right_arrow;
-        play_but->draw();
-        play_but->blit_upd(0);
-        SDL_WaitThread(audio_thread,0);
-      }
-      break;
-    default: alert("checkbox_cmd?");
   }
 }
 
@@ -1603,17 +1590,19 @@ static float non_linear(float x,int trfmode) {
       if (x<-limit) return -limit;
       break;
     case 1:
+      if (x>0.) {
+        if (x>limit2) return limit2;
+        return 2*x-x*x/limit2;
+      }
       if (x<-limit) return -limit;
-      if (x>limit2) return limit2/2;
-      if (x>0.) return (x-x*x/2/limit2);
       break;
     case 2:
       if (x>0.) {
         if (x>limit2) return limit2;
-        return 2*(x-x*x/2/limit2);
+        return 2*x-x*x/limit2;
       }
       if (x<-limit2) return -limit2;
-      return 2*(x+x*x/2/limit2);
+      return 2*x+x*x/limit2;
     case 3:
       if (x>limit || x<-limit) return limit;
       if (x<0) return -x;
@@ -1623,10 +1612,6 @@ static float non_linear(float x,int trfmode) {
 }
 
 void Instrument::delete_mass() {
-  if (active_mass==0) {
-    alert("mass 0 cannot be removed");
-    return;
-  }
   Node *nod=bouncy->nodes+active_mass;
   Spring *sp,*sp2;
   int i,j;
@@ -1658,27 +1643,26 @@ void Instrument::delete_mass() {
   phys_model->reconnect();
   reloc_pickup(pickup_left);
   reloc_pickup(pickup_right);
-  reloc_pickup(excite);
+  reloc_pickup(excite_mass);
   active_mass=-1;
 }
 
 void Instrument::delete_spring() {
-        int j;
-        for (j=active_spring;j<Send;++j) {
-          bouncy->springs[j]=bouncy->springs[j+1];
-          phys_model->springs[j]=phys_model->springs[j+1];
-        }
-        --Send;
-        bouncy->reconnect();   // restore spr[] in nodes
-        phys_model->reconnect(); 
-        active_spring=-1;
-      }
+  for (int i=active_spring;i<Send;++i) {
+    bouncy->springs[i]=bouncy->springs[i+1];
+    phys_model->springs[i]=phys_model->springs[i+1];
+  }
+  --Send;
+  bouncy->reconnect();   // restore spr[] in nodes
+  phys_model->reconnect(); 
+  active_spring=-1;
+}
 
 void Instrument::draw() {
   int i;
   for (i=0; i <= Send; i++) {
     Spring *s=bouncy->springs+i;
-    int col= s->weak ? 0xff00ff : 0xff;
+    int col= s->weak ? 0xe000ff : 0xff;
     lineColor(bview->win, s->a->d_x+s->a->nom_x, s->a->d_y+s->a->nom_y, s->b->d_x+s->b->nom_x, s->b->d_y+s->b->nom_y,col);
     if (i==active_spring) 
       circleColor(bview->win,(s->a->d_x+s->a->nom_x + s->b->d_x+s->b->nom_x)/2,
@@ -1688,7 +1672,7 @@ void Instrument::draw() {
     Node *n=bouncy->nodes+i;
     int rr=int(sqrt(8 * n->mass));
     if (n->fixed) {
-      boxColor(bview->win,n->d_x+n->nom_x-5, n->d_y+n->nom_y-10,n->d_x+n->nom_x+5,n->d_y+n->nom_y+10,0xff00ff);
+      boxColor(bview->win,n->d_x+n->nom_x-6, n->d_y+n->nom_y-6,n->d_x+n->nom_x+6,n->d_y+n->nom_y+6,0xe000ff);
       if (i==active_mass)
         rectangleColor(bview->win,n->d_x+n->nom_x-5,n->d_y+n->nom_y-10,n->d_x+n->nom_x+5,n->d_y+n->nom_y+10,0xff);
     }
@@ -1698,10 +1682,10 @@ void Instrument::draw() {
         circleColor(bview->win,n->d_x+n->nom_x,n->d_y+n->nom_y,rr,0xff);
     }
     if (i==pickup_left)
-      filledCircleColor(bview->win,n->d_x+n->nom_x,n->d_y+n->nom_y,2,0xff);
+      filledCircleColor(bview->win,n->d_x+n->nom_x-2,n->d_y+n->nom_y,2,0xff);
     if (i==pickup_right)
-      filledCircleColor(bview->win,n->d_x+n->nom_x,n->d_y+n->nom_y,2,0xffff);
-    if (i==excite) {
+      filledCircleColor(bview->win,n->d_x+n->nom_x+2,n->d_y+n->nom_y,2,0xff);
+    if (i==excite_mass) {
       int x=n->d_x+n->nom_x,
           y=n->d_y+n->nom_y-rr-6;
       trigonColor(bview->win,x-2,y,x+2,y,x,y+4,0xff);
@@ -1711,117 +1695,118 @@ void Instrument::draw() {
 
 void audio_callback(Uint8 *stream, int len) {
   int buffer[len/2];
-  bool playtune=play_tune->value();
-  int voice_fst= playtune ? 0 : act_instr*2,
-      voice_lst= playtune ? voice_max : voice_fst+2;
+  const int
+    voice_fst= play_tune ? 0 : act_instr*2,
+    voice_lst= play_tune ? voice_max-1 : voice_fst,
+    act_chan=act_color%2;
   for (int i=0;i<len/2;++i) buffer[i]=0;
-  if (!freeze->value() && !nbufs.end_reached) {
-    for (int voice=voice_fst;voice<voice_lst;voice+=2) {
-      Instrument *inst=INS[voice/2];
-      Panel *pan=panel[voice/2];
-      if (inst->pickup_left<0 && inst->pickup_right<0)
-        continue;
-      NoteBuffer *nbuf[2]={ nbufs.nbuf+voice, nbufs.nbuf+voice+1 },
-                 *nb;
-      for (int i=0;i<len/2;i+=2) {
-        if (playtune) {
-          for (int chan=0;chan<2;++chan) {
-            nb=nbuf[chan];
-            if (!nb->cur_note) continue;
-            if (nb->begin) {
-              nb->begin=false;
-              if (nb->cur_note->cat==eNote) {
-                nb->the_freq=nb->cur_note->freq;
-                if (inst->excite>=0) {
-                  Node &nod=inst->phys_model->nodes[inst->excite];
-                  if (chan==0) nod.d_x=30;
-                  else nod.d_y=30;
-                }
+  bool anynote=!play_tune;
+  for (int voice=voice_fst;voice<=voice_lst;voice+=2) {
+    if (one_col && voice!=act_instr*2) continue;
+    Instrument *inst=INST[voice/2];
+    if (inst->pickup_left<0 && inst->pickup_right<0)
+      continue;
+    Panel *pan=PAN[voice/2];
+    NoteBuffer *nbuf[2]={ nbufs.nbuf+voice, nbufs.nbuf+voice+1 },
+               *nb;
+    for (int i=0;i<len/2;i+=2) {
+      if (play_tune) {
+        for (int chan=0;chan<2;++chan) { // initialize note buffer
+          if (one_col && act_chan!=chan) continue;
+          nb=nbuf[chan];
+          if (!nb->cur_note || nb->cur_note->cat==eEnd) continue;
+          anynote=true;
+          if (nb->begin) {
+            nb->begin=false;
+            if (nb->cur_note->cat==eNote) {
+              nb->the_freq=nb->cur_note->freq;
+              if (inst->excite_mass>=0) {
+                Node &nod=inst->phys_model->nodes[inst->excite_mass];
+                if (chan==0) nod.d_x=inst->excit;
+                else nod.d_y=inst->excit;
               }
             }
           }
-          float freq0=nbuf[0]->the_freq/mid_C,
-                freq1=nbuf[1]->the_freq/mid_C;
-          inst->phys_model->eval_model(inst,nbuf,freq0,freq1);
-          for (int chan=0;chan<2;++chan) {
-            nb=nbuf[chan];
-            if (!nb->cur_note) continue;
-            nb->busy+=tempo->value();
-            if (nb->busy>=nb->cur_note->dur) {
-              nb->busy-=nb->cur_note->dur;
-              nb->begin=true;
+        }
+        float freq0=nbuf[0]->the_freq/mid_C,
+              freq1=nbuf[1]->the_freq/mid_C;
+        inst->phys_model->eval_model(inst,nbuf,freq0,freq1);
+        for (int chan=0;chan<2;++chan) { // read phys_model
+          if (one_col && act_chan!=chan) continue;
+          nb=nbuf[chan];
+          if (!nb->cur_note) continue;
+          nb->busy+=tempo->value();
+          if (nb->busy>=nb->cur_note->dur) {
+            nb->busy-=nb->cur_note->dur;
+            if (nb->cur_note->cat!=eEnd)
               ++nb->cur_note;
-              if (nb->cur_note->cat==eEnd) {  // stop
-                nbufs.end_reached=true;
-                send_uev('endr');
-                break;
-              }
-              if (nb->cur_note->cat==eNote && nb->cur_note->start_snr > act_snr) {
+            if (nb->cur_note->cat==eNote) {
+              nb->begin=true;
+              if (nb->cur_note->start_snr > act_snr) {
                 do {
                   ++act_snr;
                   if (!ignore->value()) exec_info(act_snr,true);
                 } while (act_snr < nb->cur_note->start_snr);
-                send_uev('csnr',act_snr);
+                send_uev([](int actsnr){
+                  txtmes2->draw_mes("%d:%d",actsnr/meter,actsnr%meter);
+                },act_snr);
               }
             }
           }
         }
-        else {
+      }
+      else {
+        if (smooth::phase>0) smooth::smooth(inst);
+        else 
           inst->phys_model->eval_model(inst,0,1,1);
-        }
-        Node *nod1= inst->pickup_left>=0 ? inst->phys_model->nodes+inst->pickup_left : 0,
-             *nod2= inst->pickup_right>=0 ? inst->phys_model->nodes+inst->pickup_right : 0;
-        float left=0,
-              right=0;
-        if (nod1) {
-          left=nod1->d_y;
-          right=nod1->d_x;
-          if (nod2) {
-            if (pan->pu_mode->value()) {  // anti-phase?
-              left-=nod2->d_y; right-=nod2->d_x;
-            }
-            else {
-              left+=nod2->d_y; right+=nod2->d_x;
-            }
-          }
-        }
-        else if (nod2) {
-          left=nod2->d_y;
-          right=nod2->d_x;
-          if (pan->pu_mode->value()) {  // anti-phase?
-            left-=left; right=-right;
-          }
-        }
-        int val0=int(non_linear(left*400*inst->ampl,pan->tf_mode)),
-            val1=int(non_linear(right*400*inst->ampl,pan->tf_mode));
-        if (playtune) {
-          if (voice==0) buffer[i]=buffer[i+1]=0;
-          buffer[i]+=val0;
-          buffer[i+1]+=val1; 
-        }
-        else {
-          buffer[i]=val0;
-          buffer[i+1]=val1;
-        }
+      }
+      Node *nod1= inst->pickup_left>=0 ? inst->phys_model->nodes+inst->pickup_left : 0,
+           *nod2= inst->pickup_right>=0 ? inst->phys_model->nodes+inst->pickup_right : 0;
+      float left=0,
+            right=0;
+      if (pan->SET[ePaph].i==0 && nod1 && nod2) { // in-phase?
+        left=nod1->d_y + nod2->d_y;
+        right=nod1->d_x + nod2->d_x;
+      }
+      else if (pan->SET[ePaph].i==1 && nod1 && nod2) { // anti-phase?
+        left=nod1->d_y - nod2->d_y;
+        right=nod1->d_x - nod2->d_x;
+      }
+      else {
+        if (nod1) left=nod1->d_y;
+        if (nod2) right=nod2->d_x;
+      }
+      int val0=int(non_linear(left*400*inst->ampl,inst->tf_mode)),
+          val1=int(non_linear(right*400*inst->ampl,inst->tf_mode));
+      if (play_tune) {
+        buffer[i]+=val0;
+        buffer[i+1]+=val1; 
+      }
+      else {
+        buffer[i]=val0;
+        buffer[i+1]=val1;
       }
     }
-    Sint16 *out=reinterpret_cast<Sint16*>(stream);
-    for (int i=0;i<len/2;i+=2) {
-      out[i]=minmax(-30000,buffer[i],30000);
-      out[i+1]=minmax(-30000,buffer[i+1],30000);
-      scope.update(out,i);
-    }
-    if (wav_mode==eWavRecording) {
-      if (!dump_wav((char*)out,len))
-        wav_mode=0;
+    if (stop_req==eEndReached) {
+      if (++inst->phys_model->damp_cnt > 10)
+        stop_req=eStopAudio;
     }
   }
+  Sint16 *out=reinterpret_cast<Sint16*>(stream);
+  for (int i=0;i<len/2;i+=2) {
+    out[i]=minmax(-30000,buffer[i],30000);
+    out[i+1]=minmax(-30000,buffer[i+1],30000);
+    scope::update(out,i);
+  }
+  if (wav_mode==eWavRecording && !dump_wav((char*)out,len))
+    wav_mode=0;
+  if (!anynote && !stop_req) stop_req=eEndReached;
 }
 
 void extb_cmd(RExtButton *eb,bool is_act) {
   if (!is_act)
     return;
-  switch (eb->id.id1) {
+  switch (eb->id) {
     case 'mmas':
       mode=ePlayMode;
       break;
@@ -1831,14 +1816,6 @@ void extb_cmd(RExtButton *eb,bool is_act) {
     case 'edsp':
       mode=eEditSpring;
       break;
-    case 'panl':
-      if (act_instr!=eb->id.id2) {
-        panel[act_instr]->bgw->hide();
-        act_instr=eb->id.id2;
-        panel[act_instr]->bgw->show();
-        act_color= 2 * act_instr + panel[act_instr]->voice_col->act_rbutnr();
-      }
-      break;
     case 'sved':
       scv_mode=eEdit;
       break;
@@ -1846,7 +1823,7 @@ void extb_cmd(RExtButton *eb,bool is_act) {
       scv_mode=eSelect;
       break;
     default:
-      alert("extb_cmd '%s'?",id2s(eb->id.id1));
+      alert("extb_cmd '%s'?",id2s(eb->id));
   }
 }
 
@@ -1857,12 +1834,13 @@ void handle_key_event(SDL_keysym *key,bool down) {
     case SDLK_k:
     case SDLK_m:
     case SDLK_p:
+    case SDLK_v:
     case SDLK_UP:
     case SDLK_DOWN:
+    case SDLK_LCTRL:
       break;
     case SDLK_i:
       if (down) { bview->hide(); messages->show(); }
-      else { messages->hide(); bview->show(); }
       break;
     default:
       alert("unexpected key");
@@ -1872,194 +1850,118 @@ void handle_key_event(SDL_keysym *key,bool down) {
 
 void bgr_clear(BgrWin *bgr) { bgr->clear(); }
 
-void draw_panel(BgrWin *bgr) { // with border
-  bgr->draw_raised(0,cForeground,true);
-  Panel *pan=panel[bgr->id.id2];
-  pan->bgw->border(pan->tfer_curve,1);
-}
-
 void extrb_label(SDL_Surface *win,int nr,int) {
   const char *lab=0;
   switch (nr) {
-    case 1:
-      lab="L: move mass\nM: toggle fixed\nR: toggle pickup"; break;
-    case 2:
-      lab="L: select mass\nM: insert mass\nR: connect\nkeys: d, up, down"; break;
     case 3:
-      lab="L: select spring\nM: toggle strength\nR: select excited mass\nkeys: d"; break;
+      lab="L: move mass\nM: toggle fixed\nR: toggle pickup"; break;
     case 4:
-      lab="L: insert/remove note\nM: staccato note\nR: ins/rm note, color"; break;
+      lab="L: select mass\nM: insert mass\nR: connect"; break;
     case 5:
+      lab="L: select spring\nM: toggle strength\nR: select excited mass"; break;
+    case 1:
+      lab="L: insert/remove note\nM: staccato note\nR: ins/rm note, color"; break;
+    case 2:
       lab="L: select note, column\nM: select color\nR: select all >>"; break;
   }
   draw_ttf->draw_string(win,lab,Point(3,1));
 }
 
-void h_slider_cmd(HSlider *sl,int fire,bool rel) { // val 0 - 8
-  Bouncy *act_bnc=0;
-  PhysModel *act_pm=0;
-  if (INS[sl->id.id2]) { act_bnc=INS[sl->id.id2]->bouncy; act_pm=INS[sl->id.id2]->phys_model; }
-  switch (sl->id.id1) {
-    case 'tmpo':  // 6 - 16
-      set_text(sl->text,"%d",10*sl->value());
-      break;
-    case 'asym': {
-        static const float as[9]={ 0.51, 0.97, 0.98, 0.99, 1., 1.01, 1.02, 1.03, 1.98 };
-        if (act_bnc) act_bnc->asym=act_pm->asym=as[sl->value()];
-        set_text(sl->text,"%.2f",as[sl->value()]);
-      }
-      break;
-    case 'tuni': {
-        float tun=powf(1.012,float(sl->value()));
-        if (act_pm) act_pm->tuning=tun;
-        set_text(sl->text,"%.2f",tun);
-      }
-      break;
-    case 'fric': {
-        static const float fric[8]={ 4,2,1,0.4,0.2,0.1,0.04,0.02 };
-        float fr=fric[sl->value()]/2000.; // 44100/20 = 2200
-        if (act_pm) act_pm->friction=1.-fr;  // bouncy not affected
-        set_text(sl->text,"%.2fe-3",fr*1000);
-      }
-      break;
-    case 'lost': {
-        static const float ls[6]={ 1,0.3,0.1,0.03,0.01,0.003 };
-        if (act_bnc) act_bnc->low_sprc=act_pm->low_sprc=ls[sl->value()];
-        set_text(sl->text,"%.3f",ls[sl->value()]);
-      }
-      break;
-    case 'fbac': {  // feedback
-        static const float fb[7]={ 0,0.1,0.14,0.2,0.3,0.5,0.7 };
-        if (INS[sl->id.id2]) INS[sl->id.id2]->feedb=fb[sl->value()];
-        if (sl->value()==0)
-          set_text(sl->text,"0%");
-        else
-          set_text(sl->text,"%.0f%%",fb[sl->value()]*100);
-      }
-      break;
-   }
-}
-
-void v_slider_cmd(VSlider *sl,int fire,bool rel) { // val 0 - 8
-  switch (sl->id.id1) {
-    case 'ampl': {
-        static const float amp[8]={ 0, 0.15, 0.2, 0.3, 0.5, 0.7, 1., 1.4 };
-        if (INS[sl->id.id2]) INS[sl->id.id2]->ampl=amp[sl->value()];
-        set_text(sl->text,"%.2f",amp[sl->value()]);
-      }
-      break;
-  }
-}
-
-void draw_tfer_curve(BgrWin *tfw) {
+void draw_tfer_curve(BgrWin *tfc) {
   int i,
-      x;
+      x,
+      tf_mode=INST[act_instr]->tf_mode;
   const int xstep=40000/tfer_w,
             ydiv=32000/tfer_h;
-  Panel *pan=panel[tfw->id.id2];
-  tfw->clear();
-  hlineColor(tfw->win,0,2*tfer_w-1,tfer_h,0xff00ff);
-  vlineColor(tfw->win,tfer_w,0,2*tfer_h-1,0xff00ff);
+  tfc->clear();
+  hlineColor(tfc->win,0,2*tfer_w-1,tfer_h,0xff00ff);
+  vlineColor(tfc->win,tfer_w,0,2*tfer_h-1,0xff00ff);
   for (i=0,x=-40000;i<2*tfer_w-1;x+=xstep,++i)
-    pixelColor(tfw->win,i,tfer_h-int(non_linear(x,pan->tf_mode))/ydiv,0xff);
-  tfw->blit_upd(0);
-}
-
-void rbutwin_cmd(RButWin *rbw,int nr,int fire) {
-  switch (rbw->id.id1) {
-    case 'tfmo': {
-        Panel *pan=panel[rbw->id.id2];
-        pan->tf_mode=pan->tfer_mode->act_rbutnr();
-        draw_tfer_curve(pan->tfer_curve);
-      }
-      break;
-    case 'vcol':
-      act_color=2 * rbw->id.id2 + nr;
-      break;
-    default: alert("rbutwin_cmd?");
-  }
+    pixelColor(tfc->win,i,tfer_h-int(non_linear(x,tf_mode))/ydiv,0xff);
+  tfc->blit_upd(0);
 }
 
 void mouse_down(BgrWin *bgw,int x,int y,int but) {
-  switch (bgw->id.id1) {
+  switch (bgw->id) {
     case 'scv': sv.mouse_down(x,y,but); break;
-    case 'infv': {
-        info_buf.mouse_down(sectnr(x));
-      }
-      break;
+    case 'infv': info_buf.mouse_down(sectnr(x)); break;
     default: alert("mouse_down?");
   }
 }
 
 void mouse_moved(BgrWin *bgw,int x,int y,int but) {
-  switch (bgw->id.id1) {
+  switch (bgw->id) {
     case 'scv': sv.mouse_moved(x,y,but); break;
   }
 }
 
 void mouse_up(BgrWin *bgw,int x,int y,int but) {
-  switch (bgw->id.id1) {
+  switch (bgw->id) {
     case 'scv': sv.mouse_up(x,y,but); break;
+  }
+}
+
+static const int // d   c b   a   g   f e
+  line_col[12]=   { 1,0,2,1,0,1,0,1,0,1,1,0 };
+
+void draw_notes() {
+  for (int lnr=0;lnr<sclin_max;++lnr) {
+    int y=scv_yoff+lnr*sclin_dist;
+    for (int snr=leftside;snr<score->len && snr<leftside+nom_snr_max;++snr) {
+      ScSection *sec=score->get_section(lnr,snr);
+      if (sec->occ()) {
+        int x=(snr-leftside)*sect_len+1;
+        sec->draw_playsect(x,y);
+      }
+    }
   }
 }
 
 void draw_score(BgrWin *scv) {
   scv->clear();
-  int lnr,
-      snr,
-      xend=min((score->len-leftside)*sect_len,scv_w);
-  ScSection *sec;
-
   txtmes1->draw_mes("%d:%d",leftside/meter,leftside%meter);
-  if (xend<=0)
+
+  if (score->len-leftside<=0)
     return;
-  for (snr=leftside+1;snr<score->len;++snr) {
+  for (int snr=leftside+1;snr<score->len && snr<leftside+nom_snr_max;++snr) {
     if (snr%meter==0) {
       int x=(snr-leftside)*sect_len;
-      if (x>=xend-1) break;
       vlineColor(scv->win,x,0,scv_h-1,0xb0b0b0ff);
     }
   }
-  for (lnr=0;lnr<sclin_max;++lnr) {
-    int y=scv_yoff+lnr*sclin_dist,
-        lcol=line_col[lnr%12];
+  for (int lnr=0;lnr<sclin_max;++lnr) {
+    int lcol=line_col[lnr%12];
     if (lcol) {
+      const int xend=min((score->len-leftside)*sect_len,scv_w),
+                y=scv_yoff+lnr*sclin_dist;
       hlineColor(scv->win,0,xend-1,y,lcol==2 ? 0xff : 0xb0b0b0ff);
     }
-    for (snr=leftside;snr<score->len;++snr) {
-      int x=(snr-leftside)*sect_len+1;
-      if (x>xend-sect_len+1) break;
-      sec=score->get_section(lnr,snr);
-      if (sec->occ()) sec->draw_playsect(x,y);
-    }
   }
+  draw_notes();
 }
 
 void draw_info(BgrWin *infv) {
   infv->clear();
-  int snr,
-      xend=min((score->len-leftside)*sect_len,scv_w);
-  if (xend<=0)
+  if (score->len-leftside<=0)
     return;
-  for (snr=leftside+1;snr<score->len;++snr) {
+  int snr;
+  for (snr=leftside+1;snr<score->len && snr<leftside+nom_snr_max;++snr) {
     if (snr%meter==0) {
       int x=(snr-leftside)*sect_len;
-      if (x>=xend-1) break;
       vlineColor(infv->win,x,0,infv->win->h-1,0xb0b0b0ff);
     }
   }
-  for (snr=leftside;snr<=info_buf.lst_info && snr<score->len;++snr) {
-    int x=(snr-leftside)*sect_len+4;
-    if (x>=xend) break;
-    ScInfo *inf=&info_buf.get(snr);
-    if (inf->tag>=0) {
+  for (snr=leftside;snr<=info_buf.lst_info && snr<score->len && snr<leftside+nom_snr_max;++snr) {
+    InfoVal *inf=&info_buf.get(snr);
+    if (inf->slider_tag>=0) {
       bool done[voice_max/2];
       for (int i=0;i<voice_max/2;++i) done[i]=false;
       for (;inf;inf=inf->next) {
-        if (!done[inf->col]) {
-          done[inf->col]=true;
-          int y=inf->col*5+1;
-          filledTrigonColor(infv->win,x-3,y,x+3,y,x,y+4,col2color[inf->col*2]);
+        if (!done[inf->instr]) {
+          done[inf->instr]=true;
+          int x=(snr-leftside)*sect_len+4,
+              y=inf->instr*5+1;
+          filledTrigonColor(infv->win,x-3,y,x+3,y,x,y+4,col2color[inf->instr*2]);
         }
       }
     }
@@ -2073,8 +1975,10 @@ void ScSection::draw_playsect(int x,int y) {
     bool more=more1(),
          stacc=false;
     if (!more) get(col,0,&stacc);
-    int gap= stacc ? 4 : 2;
-    boxColor(scoreview->win,x,y-2,x+sect_len-gap,y+2,more ? 0xf08080ff : col2color[col]);
+    int gap= stacc ? 4 : 2,
+        color= one_col ? col==act_color ? col2color[col] : 0xb0b0b0ff
+                       : more ? 0xf08080ff : col2color[col];
+    boxColor(scoreview->win,x,y-2,x+sect_len-gap,y+2,color);
     if (is_sel()) {
       boxColor(scoreview->win,x+2,y-1,x+sect_len-gap-2,y+1,0xffffffff); // erase middle
     }
@@ -2119,6 +2023,7 @@ void ScoreView::sel_column(int snr,int col) { // default: col = -1
       ScSection sect;
       if (col<0) sect.copy(sec);
       else sect.copy(sec,col);
+      selected.to_rose();
       selected.insert(lnr,snr,&sect);
     }
   }
@@ -2167,6 +2072,7 @@ void ScoreView::select_down(ScSection *sec,const int lnr,int snr,int but) {
         }
         else {
           sec->set_sel(true,act_color);
+          selected.to_rose();
           selected.insert(lnr,snr,sec);
         }
         sec->draw_sect(lnr,snr);
@@ -2195,6 +2101,7 @@ void ScoreView::select_down(ScSection *sec,const int lnr,int snr,int but) {
         }
         else {
           sec->set_sel(true);        // all colors selected
+          selected.to_rose();
           selected.insert(lnr,snr,sec);
         }
         sec->draw_sect(lnr,snr);
@@ -2223,7 +2130,13 @@ void ScoreView::mouse_down(int x,int y,int but) {
   prev_snr=snr;
   cur_lnr=lnr;
   cur_snr=snr;
+  cur_leftside=leftside;
   cur_point=prev_point=Point(x,y);
+  if (keystate[SDLK_LCTRL]) {
+    state=eScroll;
+    SDL_EventState(SDL_MOUSEMOTION,SDL_ENABLE);
+    return;
+  }
   if (keystate[SDLK_m] || keystate[SDLK_c]) {
     if (!selected.sd_list.lis) return;
     state= keystate[SDLK_c] ? eCopying : eMoving;
@@ -2241,22 +2154,67 @@ void ScoreView::mouse_down(int x,int y,int but) {
       snprintf(buf,60,"  voice %d (%s): stacc=%d sel=%d",c,col_name[c],stacc,sec->is_sel(c));
       messages->add_text(buf,false);
     }
-    messages->draw_blit_upd();
+    messages->draw_blit_recur(); messages->upd();
   }
   else if (keystate[SDLK_p]) { // paste sections from selected
     SLList_elem<SectData> *sd=selected.sd_list.lis;
     if (!sd) return;
     ScSection *sec1;
-    int min_snr=selected.min_snr(); // leftmost selected section
     for (;sd;sd=sd->nxt) {
+      ScSection *from=score->get_section(sd->d.lnr,sd->d.snr);
+      from->set_sel(false); // unselect source section
+      from->draw_sect(sd->d.lnr,sd->d.snr);
+    }
+    int min_snr=selected.min_snr(); // leftmost selected section
+    for (sd=selected.sd_list.lis;sd;sd=sd->nxt) {
       sec1=score->get_section(sd->d.lnr,sd->d.snr);
       int snr1=sd->d.snr + snr - min_snr;
       if (score->lst_sect<snr1) score->lst_sect=snr1;
       sec1=score->get_section(sd->d.lnr,snr1);
       for (int col=0;col<voice_max;++col)
         if (sd->d.sect.is_sel(col)) sec1->copy(&sd->d.sect,col);
-      sec1->set_sel(false);
       sec1->draw_sect(sd->d.lnr,snr1);
+      sd->d.snr=snr1;
+    }
+  }
+  else if (keystate[SDLK_v]) { // read from /tmp
+    FILE *tmp=fopen(cp_paste_buf,"r");
+    if (!tmp) { alert("%s not readable",cp_paste_buf); return; }
+    int lnr1,snr1;
+    selected.modify_sel('uns'); // selected is reset
+    char buf[10];
+    if (1!=fscanf(tmp,"%2s",buf) || strcmp(buf,"sv")) { alert("'sv' missing in %s",cp_paste_buf); return; }
+    for (;;) {
+      if (2!=fscanf(tmp," l%ds%d",&lnr1,&snr1)) break;
+      ScSection sec1;
+      for (int i=0;i<12;++i) {  // bigband: inst_max = 12
+        int ch=fgetc(tmp);
+        if (i<voice_max) {
+          if (ch=='p') { // play
+            char stacc;
+            fscanf(tmp,"%1hhx",&stacc);
+            sec1.set(i,true,stacc);
+            sec1.set_sel(true,i);
+          }
+          else
+            sec1.set(i,false,false);
+        }
+      }
+      selected.to_rose();
+      selected.insert(lnr1-10,snr1,&sec1); // bigband: difference lnr = 10
+      if (getc(tmp)=='\n') break;
+    }
+    SLList_elem<SectData> *sd;
+    int min_snr=selected.min_snr(); // leftmost selected section
+    for (sd=selected.sd_list.lis;sd;sd=sd->nxt) {
+      ScSection *sec1=score->get_section(sd->d.lnr,sd->d.snr);
+      snr1=sd->d.snr + snr - min_snr;
+      if (score->lst_sect<snr1) score->lst_sect=snr1;
+      sec1=score->get_section(sd->d.lnr,snr1);
+      for (int col=0;col<voice_max;++col)
+        if (sd->d.sect.is_sel(col)) sec1->copy(&sd->d.sect,col);
+      sec1->draw_sect(sd->d.lnr,snr1);
+      sd->d.snr=snr1;
     }
   }
   else if (scv_mode==eEdit) edit_down(sec,lnr,snr,but);
@@ -2265,8 +2223,20 @@ void ScoreView::mouse_down(int x,int y,int but) {
 }
 
 void ScoreView::mouse_moved(int x,int y,int but) {
+  if (keystate[SDLK_LCTRL] && state!=eScroll) // ctrl key pressed too late?
+    state=eScroll;
   switch (state) {
     case eIdle:
+      break;
+    case eScroll: {
+        int dx= x-cur_point.x,
+            new_left=max(0,(cur_leftside*sect_len-dx)/sect_len);
+        if (leftside!=new_left) {
+          leftside=new_left;
+          infoview->draw_blit_upd();
+          scoreview->draw_blit_upd();
+        }
+      }
       break;
     case eCollectSel:
     case eCollectSel1: {
@@ -2364,7 +2334,6 @@ void ScoreView::mouse_moved(int x,int y,int but) {
         }
         prev_snr=new_snr;
       }
-      break;
   }
 }
 
@@ -2375,6 +2344,9 @@ void ScoreView::mouse_up(int x,int y,int but) {
     case eErasingCol:
     case eCollectSel:
     case eCollectSel1:
+      break;
+    case eScroll:
+      sv_scroll->set_xpos(leftside*sect_len);
       break;
     case eTracking:
     case eTrackingCol:
@@ -2445,51 +2417,103 @@ void ScoreView::mouse_up(int x,int y,int but) {
   SDL_EventState(SDL_MOUSEMOTION,SDL_IGNORE);
 }
 
-void sv_scroll_cmd(HScrollbar*,int val,int rang) {
-  if (leftside!=val/sect_len) {
-    leftside=val/sect_len;
+void sv_scroll_cmd(HScrollbar* scb) {
+  if (leftside!=scb->value/sect_len) {
+    leftside=scb->value/sect_len;
     scoreview->draw_blit_upd();
     infoview->draw_blit_upd();
   }
 }
 
-Panel::Panel(Point top,int nr):
-    tf_mode(0) {
+Panel::Panel() {
   for (int i=0;i<ctrl_max;++i)
-    SET[i]=SET0[i]=0;
-  bgw=new BgrWin(top_win,Rect(top.x,top.y,170,360),0,draw_panel,0,0,0,cForeground,Id(0,nr));
-  int ypos=18;
-  voice_col=new RButWin(bgw,0,Rect(114,ypos,30,2*TDIST),"channel",false,rbutwin_cmd,Id('vcol',nr));
+    SET[i].i=SET0[i].i=0;
+  SET[eAsym].i=SET0[eAsym].i=4;
+  SET[eAmpl].i=SET0[eAmpl].i=5;
+  SET[eExl].i=SET0[eExl].i=2;
+  SET[eFric].i=SET0[eFric].i=5;
+  SET[eLstr].i=SET0[eLstr].i=2;
+}
+
+void fill_panel(Point top) {
+  pan_view=new BgrWin(top_win,Rect(top.x,top.y,170,400),0,
+    [](BgrWin *bgr) {
+      bgr->draw_raised(0,cForeground,true);
+      pan_view->border(tfer_curve,1);
+    },
+    0,0,0,cForeground);
+  int ypos=4;
+  voice_col=new RButtons(pan_view,0,Rect(116,ypos+16,30,2*TDIST),"channel",false,[](RButtons*,int nr,int fire) {
+    act_color=2*act_instr+nr;
+    if (one_col) { draw_notes(); scoreview->blit_upd(); }
+  });
   voice_col->add_rbut("  X"); 
   voice_col->add_rbut("  Y");
-  CONT[ePizz]=pizzi=new CheckBox(bgw,0,Rect(10,ypos,0,14),"pizzicato",0);
-  CONT[eNonl]=non_lin=new CheckBox(bgw,0,Rect(10,ypos+16,0,14),"non-linear",0);
-  CONT[ePaph]=pu_mode=new CheckBox(bgw,0,Rect(10,ypos+32,0,14),"pickups antiphase",0);
-  CONT[ePnoi]=pink_noise=new CheckBox(bgw,0,Rect(10,ypos+48,0,14),"pink noise",0);
-  ypos+=84;
-  CONT[eTun]=tuning=new HSlider(bgw,Style(1,1),Rect(10,ypos,150,0),-30,30,"tuning",h_slider_cmd,Id('tuni',nr));
-  tuning->set_hsval(0,1,false);
-  CONT[eAsym]=asym_xy=new HSlider(bgw,1,Rect(10,ypos+38,80,0),0,8,"x/y asymmetry",h_slider_cmd,Id('asym',nr));
-  asym_xy->set_hsval(4,1,false);
-  SET[eAsym]=SET0[eAsym]=4;
-  CONT[eAmpl]=ampl=new VSlider(bgw,1,Rect(110,ypos+38,0,70),0,7,"volume",v_slider_cmd,Id('ampl',nr));
-  ampl->set_vsval(5,1,false);
-  SET[eAmpl]=SET0[eAmpl]=5;
-  CONT[eFric]=friction=new HSlider(bgw,1,Rect(10,ypos+76,80,0),0,7,"friction",h_slider_cmd,Id('fric',nr));
-  friction->set_hsval(5,1,false);
-  SET[eFric]=SET0[eFric]=5;
-  CONT[eLstr]=low_strength=new HSlider(bgw,1,Rect(10,ypos+114,80,0),0,5,"low strength",h_slider_cmd,Id('lost',nr));
-  low_strength->set_hsval(2,1,false);
-  SET[eLstr]=SET0[eLstr]=2;
-  CONT[eFb]=feedback=new HSlider(bgw,1,Rect(10,ypos+152,80,0),0,6,"feedback",h_slider_cmd,Id('fbac',nr));
-  feedback->set_hsval(0,1,false);
+  CONT[ePizz]=new CheckBox(pan_view,0,Rect(10,ypos,0,14),"pizzicato",0);
+  CONT[eNonl]=new CheckBox(pan_view,0,Rect(10,ypos+16,0,14),"non-linear",0);
+  CONT[ePnoi]=new CheckBox(pan_view,0,Rect(10,ypos+32,0,14),"pink noise",0);
+  RButtons *pu_phase;
+  CONT[ePaph]=pu_phase=new RButtons(pan_view,Style(1,1),Rect(10,ypos+50,120,2*TDIST),0,true,0);
+  pu_phase->add_rbut("pickups in phase");
+  pu_phase->add_rbut("pickups antiphase");
+  ypos+=98;
+  CONT[eTun]=new HSlider(pan_view,Style(1,1),Rect(10,ypos,150,0),-30,30,"tuning",
+    [](HSlider *sl,int fire,bool rel){
+        float tun=powf(1.012,float(sl->value()));
+        act_phm()->tuning=tun;
+        if (fire) set_text(sl->text,"%.2f",tun);
+    });
+  CONT[eAsym]=new HSlider(pan_view,1,Rect(10,ypos+38,80,0),0,8,"x/y asymmetry",[](HSlider *sl,int fire,bool rel){
+        static const float as[9]={ 0.51, 0.97, 0.98, 0.99, 1., 1.01, 1.02, 1.03, 1.98 };
+        act_bnc()->asym=act_phm()->asym=as[sl->value()];
+        if (fire) set_text(sl->text,"%.2f",as[sl->value()]);
+    });
+  CONT[eAmpl]=new VSlider(pan_view,1,Rect(110,ypos+38,0,70),0,7,"volume",[](VSlider *sl,int fire,bool rel){
+        static const float amp[8]={ 0, 0.15, 0.2, 0.3, 0.5, 0.7, 1., 1.4 };
+        INST[act_instr]->ampl=amp[sl->value()];
+        if (fire) set_text(sl->text,"%.2f",amp[sl->value()]);
+    });
+  CONT[eFric]=new HSlider(pan_view,1,Rect(10,ypos+76,80,0),0,7,"friction",[](HSlider *sl,int fire,bool rel){
+        static const float fric[8]={ 4,2,1,0.4,0.2,0.1,0.04,0.02 };
+        float fr=fric[sl->value()]/2200.; // 44100/20 = 2205
+        act_phm()->friction=1.-fr;  // bouncy not affected
+        if (fire) set_text(sl->text,"%.2fe-3",fr*1000);
+    });
+  CONT[eLstr]=new HSlider(pan_view,1,Rect(10,ypos+114,80,0),0,6,"low strength",[](HSlider *sl,int fire,bool rel){
+        static const float ls[7]={ 1,0.4,0.2,0.1,0.05,0.03,0.01 };
+        act_bnc()->low_sprc=act_phm()->low_sprc=ls[sl->value()];
+        if (fire) set_text(sl->text,"%.3f",ls[sl->value()]);
+    });
+  CONT[eExl]=new HSlider(pan_view,1,Rect(10,ypos+152,80,0),0,5,"excitation",[](HSlider *sl,int fire,bool rel){
+        static const float exc[7]={ 10,20,30,50,70,100 };
+        INST[act_instr]->excit=exc[sl->value()];
+        if (fire) set_text(sl->text,"%d",INST[act_instr]->excit);
+    });
   ypos+=192;
-  CONT[eTfer]=tfer_mode=new RButWin(bgw,1,Rect(10,ypos,100,4*TDIST),"transfer curve",false,rbutwin_cmd,Id('tfmo',nr));
+  CONT[eTfer]=tfer_mode=new RButtons(pan_view,1,Rect(10,ypos,100,4*TDIST),"transfer curve",false,[](RButtons *rb,int nr,int fire) {
+    INST[act_instr]->tf_mode=rb->value();
+    if (fire) // maybe from audio thread
+      send_uev([](int){ draw_tfer_curve(tfer_curve); },0); 
+  });
   tfer_mode->add_rbut("straight");
   tfer_mode->add_rbut("clip positive");
   tfer_mode->add_rbut("clip symmetric");
   tfer_mode->add_rbut("abs value");
-  tfer_curve=new BgrWin(bgw,Rect(110,ypos,tfer_w*2,tfer_h*2),0,draw_tfer_curve,0,0,0,cWhite,Id(0,nr));
+  tfer_curve=new BgrWin(pan_view,Rect(110,ypos,tfer_w*2,tfer_h*2),0,draw_tfer_curve,0,0,0,cWhite);
+  new Button(pan_view,1,Rect(10,ypos+62,0,0),"default = current nodes",[](Button *){
+      for (int i=0;i<=INST[act_instr]->Nend;++i) {
+        Node *n=INST[act_instr]->bouncy->nodes+i;
+        n->nom_x+=n->d_x; n->d_x=0;
+        n->nom_y+=n->d_y; n->d_y=0;
+        n=INST[act_instr]->phys_model->nodes+i;
+        n->nom_x+=n->d_x; n->d_x=0;
+        n->nom_y+=n->d_y; n->d_y=0;
+      }
+    });
+  new Button(pan_view,1,Rect(10,ypos+82,0,0),"default = current settings",[](Button *){
+    for (int i=0;i<ctrl_max;++i) 
+      PAN[act_instr]->SET0[i]=PAN[act_instr]->SET[i];
+  });
 }
 
 void Selected::restore_sel() {
@@ -2531,12 +2555,10 @@ void Selected::modify_sel(int mes) {
     sd=sd->nxt;
   }
   switch (mes) {
+    case 'uns':
     case 'dels':
       selected.reset();
-      unselect->draw_blit_upd();
-      break;
-    case 'uns':
-      selected.reset();
+      selected.to_blue();
       break;
   }
 }
@@ -2544,9 +2566,9 @@ void Selected::modify_sel(int mes) {
 int main(int argc,char** argv) {
   for (int an=1;an<argc;an++) {
     if (!strcmp(argv[an],"-h")) {
-      puts("This is bouncy");
+      puts("This is bouncy-tune");
       puts("Usage:");
-      puts("  bouncy [<config-file>]");
+      puts("  bouncy-tune [<config-file>]");
       puts("  (the config-file can be created by the application)");
       exit(1);
     }
@@ -2554,10 +2576,10 @@ int main(int argc,char** argv) {
     else config_file=argv[an];
   }
   alert_position.set(2,300);
-  top_win=new TopWin("Bouncy Tune",Rect(100,100,550,760),SDL_INIT_VIDEO|SDL_INIT_AUDIO,0,topw_disp);
+  top_win=new TopWin("Bouncy Tune",Rect(100,100,550,760),SDL_INIT_AUDIO,0,topw_disp);
   cMesBg=calc_color(0xf0f0a0);
+  cAlert=calc_color(0xffa0a0);
   top_win->bgcol=cBackground;
-  handle_uev=handle_user_event;
   handle_kev=handle_key_event;
   SDL_EnableKeyRepeat(SDL_DEFAULT_REPEAT_DELAY,SDL_DEFAULT_REPEAT_INTERVAL);
 
@@ -2565,62 +2587,134 @@ int main(int argc,char** argv) {
   messages=new TextWin(top_win,0,bview->tw_area,12,"messages");
   messages->bgcol=cMesBg;
   messages->hidden=true;
-  for (int i=0;i<voice_max/2;++i) INS[i]=new Instrument();
+  new Button(messages,Style(0,1),Rect(messages->tw_area.w-20,3,14,14),"X",
+    [](Button *b) { messages->hide(); bview->show(); });
+  for (int i=0;i<voice_max/2;++i) INST[i]=new Instrument();
   score=new Score();
   mode_ctr=new ExtRButCtrl(Style(2,cGrey),extb_cmd);
   mode_ctr->maybe_z=false;
   int ypos=10;
-  mode_ctr->act_lbut=mode_ctr->add_extrbut(top_win,Rect(10,ypos,130,3*TDIST+2),extrb_label,Id('mmas',1));
-  mode_ctr->add_extrbut(top_win,Rect(10,ypos+4+3*TDIST,130,4*TDIST+2),extrb_label,Id('edma',2));
-  mode_ctr->add_extrbut(top_win,Rect(10,ypos+8+7*TDIST,130,4*TDIST+2),extrb_label,Id('edsp',3));
-  ypos+=20+11*TDIST;
-  new Button(top_win,1,Rect(10,ypos,0,0),"make this default",button_cmd,'setl');
-  new Button(top_win,1,Rect(10,ypos+20,0,0),"reset to default",button_cmd,'resl');
-  new Button(top_win,1,Rect(10,ypos+40,0,0),"load project ...",button_cmd,'recf');
-  new Button(top_win,1,Rect(10,ypos+60,0,0),"write project ...",button_cmd,'wrcf');
+  eb_mmas=mode_ctr->add_extrbut(top_win,Rect(10,ypos,130,3*TDIST+2),Label(extrb_label,3),'mmas');
+  mode_ctr->act_lbut=eb_mmas;
+  eb_edma=mode_ctr->add_extrbut(top_win,Rect(10,ypos+4+3*TDIST,130,3*TDIST+2),Label(extrb_label,4),'edma');
+  eb_edsp=mode_ctr->add_extrbut(top_win,Rect(10,ypos+8+7*TDIST,130,3*TDIST+2),Label(extrb_label,5),'edsp');
+  ypos+=11*TDIST;
+  new Button(top_win,1,Rect(10,ypos+20,0,0),"reset nodes to default",[](Button *){
+      for (int i=0;i<=INST[act_instr]->Nend;++i) {
+        Node *n=INST[act_instr]->bouncy->nodes+i;
+        n->d_x=n->d_y=n->vx=n->vy=0;
+        n=INST[act_instr]->phys_model->nodes+i;
+        n->d_x=n->d_y=n->vx=n->vy=0;
+      }
+    });
+  new Button(top_win,1,Rect(10,ypos+40,0,0),"load project ...",[](Button *){
+      dialog->dialog_label("load project:",cAlert);
+      dialog->dialog_def(config_file ? config_file : "x.bcy",dial_cmd,'r_cf');
+    });
+
+  new Button(top_win,1,Rect(10,ypos+60,0,0),"save project ...",[](Button*) {
+      dialog->dialog_label("save:",cAlert);
+      dialog->dialog_def(config_file ? config_file : "x.bcy",dial_cmd,'w_cf');
+    });
+
   ypos+=80;
   dialog=new DialogWin(top_win,Rect(10,ypos,140,0));
+  new Button(top_win,0,Rect(156,ypos+14,20,0),"ok",[](Button*) { dialog->dok(); });
+
   ypos+=36;
-  freeze=new CheckBox(top_win,0,Rect(10,ypos,0,14),"freeze",checkbox_cmd,'frez');
-  low_frict=new CheckBox(top_win,0,Rect(10,ypos+16,0,14),"low friction",checkbox_cmd,'lofr');
-  write_wav=new CheckBox(top_win,0,Rect(10,ypos+32,0,14),"start writing out.wav",checkbox_cmd,'wsta');
+  freeze=new CheckBox(top_win,0,Rect(10,ypos,0,14),"freeze",[](CheckBox *chb){
+      if (!chb->value())
+        for (int i=0;i<=INST[act_instr]->Nend;++i) {
+          INST[act_instr]->phys_model->nodes[i].d_x=INST[act_instr]->bouncy->nodes[i].d_x;
+          INST[act_instr]->phys_model->nodes[i].d_y=INST[act_instr]->bouncy->nodes[i].d_y;
+        }
+    });
+  new CheckBox(top_win,0,Rect(10,ypos+16,0,14),"low friction",[](CheckBox *chb){
+      INST[act_instr]->bouncy->friction= chb->value() ? INST[act_instr]->phys_model->friction : nominal_friction;
+  });
+
+  write_wav=new CheckBox(top_win,0,Rect(10,ypos+32,0,14),"start writing out.wav",[](CheckBox *chb){
+      if (chb->value()) {
+        if (!i_am_playing && !play_tune) {
+          alert("if 'play tune' not enabled,\n   then 'play' must have been started");
+          write_wav->set_cbval(false,0);
+          return;
+        }
+        if (!init_dump_wav("out.wav",2,SAMPLE_RATE)) return;
+        wav_mode= play_tune ? eWavOutNoAudio : eWavOutStart;
+        wav_indic->set_color(0xff00ff); // green
+      }
+      else { 
+        if (!wav_mode) return;
+        close_dump_wav();
+        wav_indic->set_color(0xffffffff);
+        wav_mode=0;
+      }
+    });
   wav_indic=new Lamp(top_win,Rect(140,ypos+34,0,0));
-  ypos+=54;
-  new Button(top_win,1,Rect(10,ypos,0,0),"default = current settings",button_cmd,'cdef');
-  ypos+=22;
-  tab_ctr=new ExtRButCtrl(Style(0,cForeground),extb_cmd);
+  ypos+=56;
+  tab_ctr=new ExtRButCtrl(Style(0,cForeground),[](RExtButton* rb,bool is_act){
+    if (is_act) {
+      act_instr=rb->id;
+      PAN[act_instr]->connect_sliders(true);
+      pan_view->draw_blit_recur();
+      pan_view->upd();
+      act_color= 2 * act_instr + voice_col->value();
+      if (one_col) { draw_notes(); scoreview->blit_upd(); }
+    }
+  });
   tab_ctr->maybe_z=false;
   RExtButton *panel_tabs[voice_max/2];
+
+  fill_panel(Point(10,ypos+16));
+
   for (int i=0;i<voice_max/2;++i) {
-    panel[i]=new Panel(Point(10,ypos+16),i);
-    INS[i]->inst_panel=panel[i];
-    if (i>0) panel[i]->bgw->hidden=true;
-    const char* lab= i==0 ? "black" : i==1 ? "blue" : "green";
-    panel_tabs[i]=tab_ctr->add_extrbut(top_win,Rect(10+i*43,ypos,40,17),lab,Id('panl',i));
+    PAN[i]=new Panel();
+    INST[i]->inst_panel=PAN[i];
+    const char* lab[]={ "black","blue","green" };
+    panel_tabs[i]=tab_ctr->add_extrbut(top_win,Rect(10+i*43,ypos,40,17),lab[i],i);
   }
   tab_ctr->act_lbut=panel_tabs[0];
   ypos=26+bg_h;
-  txtmes1=new Message(top_win,0,"leftside:",Point(190,ypos));
-  txtmes2=new Message(top_win,0,"now:",Point(190+80,ypos));
-  txtmes3=new Message(top_win,0,"project file:",Point(190+160,ypos));
+  txtmes1=new Message(top_win,Style(1,cWhite),"leftside:",Point(190,ypos));
+  txtmes2=new Message(top_win,Style(1,cWhite),"now:",Point(190+80,ypos));
+  txtmes3=new Message(top_win,2,"project:",Point(190+160,ypos));
   ypos+=32;
   infoview=new BgrWin(top_win,Rect(190,ypos,scv_w,17),"modifications",draw_info,mouse_down,0,0,cMesBg,'infv');
-  scoreview=new BgrWin(top_win,Rect(190,ypos+36,scv_w,scv_h),"score",draw_score,mouse_down,mouse_moved,mouse_up,cWhite,'scv');
-  sv_scroll=new HScrollbar(top_win,Style(1,0,sect_len),Rect(190,ypos+scv_h+38,scv_w,0),scv_w+30,sv_scroll_cmd);
+  (new CheckBox(top_win,0,Rect(190+scv_w-120,ypos+20,0,0),"current instr only",[](CheckBox *chb){
+    draw_notes();
+    scoreview->blit_upd();
+  }))->d=&one_col;
+  scoreview=new BgrWin(top_win,Rect(190,ypos+38,scv_w,scv_h),"score",draw_score,mouse_down,mouse_moved,mouse_up,cWhite,'scv');
+  sv_scroll=new HScrollbar(top_win,Style(1,0,sect_len),Rect(190,ypos+scv_h+39,scv_w,0),scv_w+30,sv_scroll_cmd);
   ypos+=scv_h+58;
   scv_edit_ctr=new ExtRButCtrl(Style(2,cGrey),extb_cmd);
   scv_edit_ctr->maybe_z=false;
-  scv_edit_ctr->act_lbut=scv_edit_ctr->add_extrbut(top_win,Rect(190,ypos,130,3*TDIST+2),extrb_label,Id('sved',4));
-  scv_edit_ctr->add_extrbut(top_win,Rect(330,ypos,130,3*TDIST+2),extrb_label,Id('ssel',5));
-  unselect=new Button(top_win,0,Rect(470,ypos,64,0),"unselect",button_cmd,'uns');
-  del_sel=new Button(top_win,0,Rect(470,ypos+20,64,0),"delete sel",button_cmd,'dels');
-  recol_sel=new Button(top_win,0,Rect(470,ypos+40,64,0),"recolor sel",button_cmd,'rcol');
+  eb_sved=scv_edit_ctr->add_extrbut(top_win,Rect(190,ypos,130,3*TDIST+2),Label(extrb_label,1),'sved');
+  scv_edit_ctr->act_lbut=eb_sved;
+  eb_ssel=scv_edit_ctr->add_extrbut(top_win,Rect(330,ypos,130,3*TDIST+2),Label(extrb_label,2),'ssel');
+  unselect=new Button(top_win,0,Rect(470,ypos,64,0),"unselect",[](Button *){
+    selected.modify_sel('uns');
+  });
+  del_sel=new Button(top_win,0,Rect(470,ypos+20,64,0),"delete sel",[](Button *){
+    selected.modify_sel('dels');
+  });
+  recol_sel=new Button(top_win,0,Rect(470,ypos+40,64,0),"recolor sel",[](Button *){
+    selected.modify_sel('rcol');
+  });
   ypos+=80;
-  tempo=new HSlider(top_win,1,Rect(190,ypos,90,0),6,16,"tempo",h_slider_cmd,'tmpo');
+  tempo=new HSlider(top_win,1,Rect(190,ypos,90,0),6,16,"tempo",[](HSlider *sl,int fire,bool rel) {
+      set_text(sl->text,"%d",10*sl->value());
+   });
   tempo->set_hsval(12,1,false);
-  play_tune=new CheckBox(top_win,0,Rect(190,ypos+32,0,14),"play tune",checkbox_cmd,'pltu');
-  ignore=new CheckBox(top_win,0,Rect(190,ypos+50,0,14),"ignore modifications",0);
-  play_but=new Button(top_win,0,Rect(350,ypos,24,20),right_arrow,button_cmd,'play');
+  (new CheckBox(top_win,0,Rect(190,ypos+28,0,14),"play tune",[](CheckBox *chb){
+    if (i_am_playing) {
+      stop_req=eEndReached;
+      SDL_WaitThread(audio_thread,0);
+    }
+  }))->d=&play_tune;
+  ignore=new CheckBox(top_win,0,Rect(190,ypos+48,0,14),"ignore modifications",0);
+  play_but=new Button(top_win,0,Rect(350,ypos,24,20),right_arrow,play_cmd);
   scope_win=new BgrWin(top_win,Rect(400,ypos,scope_dim,scope_h*2),"oscilloscope",
                        bgr_clear,0,0,0,cMesBg);
   if (config_file) {
@@ -2628,10 +2722,10 @@ int main(int argc,char** argv) {
     if (conf) {
       if (!set_mass_spring(conf)) alert("error in %s",config_file);
       fclose(conf);
-      config_out=config_file;
     }
     else alert("project file %s not opened",config_file);
   }
+  PAN[0]->connect_sliders(true);
   bouncy_thread=SDL_CreateThread(bouncy_threadfun,0);
   get_events();
   return 0;

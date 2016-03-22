@@ -1,5 +1,5 @@
 /*  
-    Demo program for SDL-widgets-1.0
+    File to be included in make-waves.cpp
     Copyright 2011-2013 W.Boeke
 
     This program is free software; you can redistribute it and/or

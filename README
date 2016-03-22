@@ -1,11 +1,22 @@
-======== SDL-widgets, GUI toolkit on top of SDL  ========
+======== SDL-widgets, a GUI toolkit using the SDL library ========
 
-Version 1.0 - febr 2013
+Version 2.0 - jan 2012
 
-This toolkit will not be very fit for games, instead it's aiming at normal,
-possibly complicated, threaded applications. For more information, read 
-doc/sdl-widgets.html. There are 3 example applications, their doc files
-are acessable from doc/index.html.
+This version follows the preceeding version 1.0 rather fast, but there is
+a good reason for that: C++11 has been released, offering features that fit 
+very well for complicated GUI based applications. Especially the new lambda 
+closures are useable as widget callback functions. The drawback is that 
+this version 2.0 is *not* compatible with the former version, however 
+porting old programs is doable very well. If you manage to build without 
+the compiler complaining, then your program will work as usual. The 'Id' 
+parameter that was present in constructors and methods has gone. If you don't
+know about lambda's, go to:
+http://www.cprogramming.com/c++11/c++11-lambda-closures.html
+
+SDL-widgets is not very fit for the games that SDL is mostly used for,
+instead it's aiming at normal, possibly complicated, threaded applications. 
+For more information, read  doc/sdl-widgets.html. There are 3 example 
+applications, their doc files are acessable from doc/index.html.
 
 To compile, run
   ./configure
@@ -31,28 +42,29 @@ This will generate:
   make-waves/make-waves		- 4 small audio applications
   bouncy-tune/bouncy-tune	- compose and play tunes with physical-modelled instruments
 
-There is no 'make intall', probably it's not needed because the toolkit is still simple.
-By-the-way: if you want to test the toolkit with SDL-1.3, make sure that 
-libraries SDL_gfx and SDL_ttf have been compiled for 1.3 too. If not, then compilation
-will succeed, but a crash will occur at runtime.
-
-If you want to try the examples, cd to their directories, then:
-
-- make-waves doesn't need options.
-- bouncy-tune running a demo tune:
-    ./bouncy-tune rising.bcy
-  To listen: check the 'play tune' checkbox, then click the play button.
+There is no 'make intall', probably it's not needed because the toolkit is simple.
+By-the-way: if you want to test the toolkit with SDL-1.3, make sure that libraries 
+SDL_gfx and SDL_ttf have been compiled for 1.3 too. If not, then compilation
+will succeed but a crash will occur at runtime.
 
 Home page:
   http://members.chello.nl/w.boeke/SDL-widgets/index.html
 
 Modification history
 ====================
-Version 1.0
-  2013/2/17
-  - License: LGPL
-  2011/12/10
-  - Ready for prime time
+Version 2.0, 2012/1/10
+- Lambda closures as callbacks
+- To be compiled with gcc-4.6 or higher
+- Sliders: default no callback at pointer-up
+- New class RButtons, similar to RButWin, with simpler interface
+- send_uev(): 2 parameters (lambda closure, int) (2012/1/19)
+- Label: int 'id' added, used as parameter for Label::draw_cmd() (In the past,
+  the id of its parent was used.) (2012/2/10)
+- HScrollbar, VScrollbar: cmd() with 1 parameter (2012/3/10)
+
+Version 1.0, 2011/12/10
+- Ready for prime time
+- Constructor HVSlider modified
 
 Version 0.4, 2010/12/30
 - Simple editor added. (2010/12)

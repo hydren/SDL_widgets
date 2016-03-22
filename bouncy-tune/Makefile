@@ -1,5 +1,5 @@
 CC=g++
-CFLAGS=-g $$(sdl-config --cflags) \
+CFLAGS=-g $$(sdl-config --cflags) -std=c++0x \
   -O -Wuninitialized -Wshadow -Wall -Wno-non-virtual-dtor -Wno-delete-non-virtual-dtor -Wno-multichar
 
 .SUFFIXES=

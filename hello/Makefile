@@ -1,5 +1,5 @@
 CC=g++
-CFLAGS=-g $(shell sdl-config --cflags)
+CFLAGS=-g $(shell sdl-config --cflags) -std=c++0x
 LFLAGS=$(shell sdl-config --libs) -lSDL_gfx -lSDL_ttf
 
 .SUFFIXES=

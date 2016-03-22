@@ -1,6 +1,6 @@
 CC=g++ -O
-CFLAGS=-g $$(sdl-config --cflags) -I.. \
-  -Wuninitialized -Wshadow -Wall -Wno-non-virtual-dtor -Wno-multichar -Wno-delete-non-virtual-dtor
+CFLAGS=-g $$(sdl-config --cflags) -I.. -std=c++0x \
+  -Wuninitialized -Wshadow -Wall -Wno-non-virtual-dtor -Wno-delete-non-virtual-dtor -Wno-multichar
 OBJ= make-waves.o dump-wave.o ../sdl-widgets.o
 
 .SUFFIXES=
@@ -14,5 +14,5 @@ make-waves: $(OBJ)
 %.o: %.cpp
 	$(CC) -c $< $(CFLAGS)
 
-make-waves.o: ../sdl-widgets.h dump-wave.h templates.h filter-test.cpp 
+make-waves.o: ../sdl-widgets.h dump-wave.h filter-test.cpp 
 dump-wave.o: dump-wave.h

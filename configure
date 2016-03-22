@@ -6,8 +6,9 @@ echo -n "Searching sdl-config ... "
 [ -z `which sdl-config` ] && { echo no; exit; }
 echo yes
 
-# create dummy object-file for testing of libraries
-echo "int main(int,char **) { return 0; }" | g++ -c -x c++ -o tst.o -
+echo "Dummy object-file for testing g++ compiler ..."
+echo "int main(int,char **) { return 0; }" | g++ -c -x c++ -std=c++0x -o tst.o - || { echo "Problems!"; exit; }
+echo " okay"
 
 okay=yes
 LPATH=`sdl-config --libs | sed 's/ -l.*//;s/-L//'`
