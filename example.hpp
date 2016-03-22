@@ -24,7 +24,7 @@
 #ifndef SDL_WIDGETS_EXAMPLE_HPP_
 #define SDL_WIDGETS_EXAMPLE_HPP_
 
-#include "sdl-widgets.h"
+#include "SDL_widgets.h"
 
 void Widgets_RunExample();
 

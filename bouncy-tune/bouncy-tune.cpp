@@ -18,7 +18,7 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <sdl-widgets.h>
+#include <SDL_widgets.h>
 #include "dump-wave.h"
 #include "templates.h"
 

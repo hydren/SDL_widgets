@@ -16,7 +16,7 @@
     License along with this program.
 */
 
-#include <sdl-widgets.h>
+#include <SDL_widgets.h>
 
 TopWin *top_win;
 Button *but;

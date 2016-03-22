@@ -21,7 +21,7 @@
 #include <unistd.h> // for chdir()
 #include <dirent.h> // for DIR, dirent, opendir()
 #include "config.h"
-#include "sdl-widgets.h"
+#include "SDL_widgets.h"
 #include "sw-pixmaps.h"
 
 #ifdef _WIN32

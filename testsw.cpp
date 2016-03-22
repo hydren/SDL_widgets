@@ -19,7 +19,7 @@
 #include <stdio.h>
 #include <unistd.h> // for chdir()
 #include <dirent.h> // for DIR, dirent, opendir()
-#include "sdl-widgets.h"
+#include "SDL_widgets.h"
 
 int col_R,col_G,col_B;
 Uint32 cLightGrey;

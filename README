@@ -25,7 +25,7 @@ If succesful, run
   make
 
 This will generate:
-  s-widgets.o			- the widget library
+  SDL_widgets.o			- the widget library
   testsw			- a test program
   hello/hello			- you guess it
   make-waves/make-waves		- 4 small audio applications
