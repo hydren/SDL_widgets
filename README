@@ -1,0 +1,86 @@
+======== SDL-widgets, GUI toolkit on top of SDL  ========
+
+Version 1.0 - febr 2013
+
+This toolkit will not be very fit for games, instead it's aiming at normal,
+possibly complicated, threaded applications. For more information, read 
+doc/sdl-widgets.html. There are 3 example applications, their doc files
+are acessable from doc/index.html.
+
+To compile, run
+  ./configure
+
+This is a very minimal test whether a compiler and the SDL libraries are present
+on your system. It searches for font-file FreeSans.ttf starting in directory
+/usr/share/fonts. If your system stores fonts elsewere, you can use a configure
+option: --fontdir. First try to run
+  locate FreeSans.ttf
+This might yield e.g.
+  /usr/share/fonts/truetype/freefont/FreeSans.ttf
+  /usr/share/vlc/skins2/fonts/FreeSans.ttf
+Then run:
+  ./configure --fontdir /usr/share/fonts
+
+If succesful, run
+  make
+
+This will generate:
+  s-widgets.o			- the widget library
+  testsw			- a test program
+  hello/hello			- you guess it
+  make-waves/make-waves		- 4 small audio applications
+  bouncy-tune/bouncy-tune	- compose and play tunes with physical-modelled instruments
+
+There is no 'make intall', probably it's not needed because the toolkit is still simple.
+By-the-way: if you want to test the toolkit with SDL-1.3, make sure that 
+libraries SDL_gfx and SDL_ttf have been compiled for 1.3 too. If not, then compilation
+will succeed, but a crash will occur at runtime.
+
+If you want to try the examples, cd to their directories, then:
+
+- make-waves doesn't need options.
+- bouncy-tune running a demo tune:
+    ./bouncy-tune rising.bcy
+  To listen: check the 'play tune' checkbox, then click the play button.
+
+Home page:
+  http://members.chello.nl/w.boeke/SDL-widgets/index.html
+
+Modification history
+====================
+Version 1.0
+  2013/2/17
+  - License: LGPL
+  2011/12/10
+  - Ready for prime time
+
+Version 0.4, 2010/12/30
+- Simple editor added. (2010/12)
+- Dial widget added. (2010/12)
+- Sorry: the parameters of some callback functions have been modified. (2010/12)
+- File chooser, working dir chooser added. (2010/11)
+- Removed: update(Rect*,WinBase*), use top_win->upd(Rect*) instead. (2010/11)
+- Better Makefiles. (2010/9)
+- Temporary windows, staying on top. (2010/9)
+- The alert window always will stay visible.
+- All widgets have one more parameter in the constructor, indicating their style.
+  (Using global style values appeared to be not very convenient after all)
+- Setting of slider labels removed from the constructor parameter list.
+
+Version 0.3, 2009/3/29
+- Dialog box, menu widget
+- Audio app: bouncy-tune
+
+Version 0.2, 2009/3/10
+- TopWin: extra parameter in constructor.
+- New directory structure.
+- Added: horizontal and vertical scrollbar, indicator lamp, dialog widget, window resizing.
+
+Version 0.1, last updated 2008/11/13
+- RButWin constructor parameter list.
+- Added: vertical slider, text window.
+
+For remarks and questions:
+
+Wouter Boeke
+w.boeke@upcmail.nl

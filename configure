@@ -1,0 +1,52 @@
+echo -n "Searching C++ compiler ... "
+[ -z `which g++` ] && { echo no; exit; }
+echo yes
+
+echo -n "Searching sdl-config ... "
+[ -z `which sdl-config` ] && { echo no; exit; }
+echo yes
+
+# create dummy object-file for testing of libraries
+echo "int main(int,char **) { return 0; }" | g++ -c -x c++ -o tst.o -
+
+okay=yes
+LPATH=`sdl-config --libs | sed 's/ -l.*//;s/-L//'`
+echo "Searching libraries in $LPATH"
+for LIB in SDL SDL_gfx SDL_ttf
+do
+  echo -n "library $LIB ... "
+  g++ -L$LPATH -l$LIB tst.o 2>/dev/null
+  if [ $? = 0 ]
+  then echo yes
+  else echo no; okay=no
+  fi
+done
+rm -f a.out
+[ $okay = no ] && { echo "Some libraries are missing"; exit; }
+
+echo -n "Searching font files ... "
+FONTDIR=/usr/share/fonts
+
+if test $# -gt 1; then
+  if test $1 = "--fontdir"; then
+    shift
+    FONTDIR="$1"
+  else
+    echo "unexpected option $1"
+    exit
+  fi
+fi
+FONTPATH=`find $FONTDIR -name FreeSans.ttf`
+FONTPATH_MONO=`find $FONTDIR -name FreeMonoBold.ttf`
+
+if [ -z "$FONTPATH" ] || [ -z "$FONTPATH_MONO" ]
+then okay=no
+else echo okay
+fi
+
+[ $okay = no ] && { echo "TrueType font-spec not found"; exit; }
+
+echo "const char* FONTPATH=\"$FONTPATH\";" > config.h
+echo "const char* FONTPATH_MONO=\"$FONTPATH_MONO\";" >> config.h
+echo "Created: config.h. Now you can run 'make'"
+ 
