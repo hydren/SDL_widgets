@@ -728,10 +728,11 @@ SDL_Cursor *init_system_cursor(const char *image[]) {
   return SDL_CreateCursor(data, mask, 32, 32, hot_x, hot_y);
 }
 
-TopWin::TopWin(const char* wm_title,Rect rect,Uint32 init_flag,Uint32 vflag,void (*draw_cmd)(),void (*set_icon)()):
+TopWin::TopWin(const char* wm_title,Rect rect,Uint32 init_flag,Uint32 vflag,void (*draw_cmd)(),void (*set_icon)(),void (*on_sdl_init)()):
     WinBase(0,0,0,0,rect.w,rect.h,cBackground,0),
     display_cmd(draw_cmd) {
   if (SDL_Init(init_flag) < 0) err("SDL init problem");
+  if(on_sdl_init!=0) on_sdl_init();
   if (TTF_Init() < 0) err("SDL ttf init problem");
   if (!(title_font=TTF_OpenFont(FONTPATH,nominal_font_size+1)))  // fontpath from config.h
     err("font-spec %s not found",FONTPATH);

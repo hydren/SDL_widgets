@@ -138,7 +138,7 @@ struct WinBase {
 
 struct TopWin:WinBase {
   void (*display_cmd)();
-  TopWin(const char* title,Rect rect,Uint32 init_flag,Uint32 video_flag,void (*draw)(),void (*set_icon)()=0);
+  TopWin(const char* title,Rect rect,Uint32 init_flag,Uint32 video_flag,void (*draw)(),void (*set_icon)()=0,void (*on_sdl_init)()=0);
   void draw();
 };
 
