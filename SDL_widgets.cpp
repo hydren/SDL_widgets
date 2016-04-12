@@ -2196,6 +2196,7 @@ void DialogWin::draw() {
   draw_raised(&textr,cButBground,false);
   if (label)
     draw_ttf->draw_string(win,label,Point(2,0));
+  draw_line();
 }
 
 void DialogWin::dialog_label(const char *s,Uint32 col) {
