@@ -3171,7 +3171,7 @@ void handle_events(SDL_Event *ev) {
          handle_kev(&ev->key.keysym,true);
        break;
      case SDL_KEYUP:
-       if (!the_cursor.diawd && !the_cursor.edwd)
+       if (!(the_cursor.diawd && the_cursor.diawd->cursor>=0) && !the_cursor.edwd)
          handle_kev(&ev->key.keysym,false);
        break;
      case SDL_VIDEORESIZE: {
