@@ -16,16 +16,45 @@
     License along with this library.
 */
 
+#if defined(_WIN32) && defined(__STRICT_ANSI__)
+	#define off64_t _off64_t
+#endif
+
 #include <stdio.h>
 #include <stdarg.h>
-#include <unistd.h> // for chdir()
+#ifndef _WIN32
+	#include <unistd.h> // for chdir()
+#endif
 #include <dirent.h> // for DIR, dirent, opendir()
 #include "config.h"
 #include "SDL_widgets.h"
 #include "sw-pixmaps.h"
 
 #ifdef _WIN32
-#define bzero(b,len) (memset((b), '\0', (len)), (void) 0)
+	#define bzero(b,len) (memset((b), '\0', (len)), (void) 0)
+
+	#ifndef __STRICT_ANSI__
+		#define strcasecmp _stricmp
+	#else
+		int strcasecmp( const char * str1, const char * str2)
+		{
+			unsigned int str1len = strlen(str1);
+			unsigned int str2len = strlen(str2);
+			if(str1len < str2len) return -str2[str1len];
+			if(str1len > str2len) return  str1[str2len];
+			unsigned int i;
+			for(i = 0; i < str1len; i++)
+				if (tolower(str1[i]) != tolower(str2[i]))
+					return tolower(str1[i]) - tolower(str2[i]);
+			return 0;
+		}
+		char *strdup (const char *s)
+		{
+			char *d = (char*) malloc (strlen (s) + 1);  // Allocate memory (Space for length plus nul)
+			if (d != NULL) strcpy (d,s);        		// Copy string if okay
+			return d;                            		// Return the new string
+		}
+	#endif
 #endif
 
 Uint32 cWhite,cBlack, cGrey, cRed, cBlue,
