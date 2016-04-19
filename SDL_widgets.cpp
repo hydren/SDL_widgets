@@ -1555,6 +1555,11 @@ int RButWin::act_rbutnr() {
   return d->act_button-d->but;
 }
 
+RButton* RButWin::act_button()
+{
+	return d->act_button;
+}
+
 void RButWin::reset() {
   d->butnr=-1; y_off=0;
   d->act_button=0;

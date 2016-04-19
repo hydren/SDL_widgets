@@ -215,6 +215,7 @@ struct RButWin:WinBase {
   void set_rbut(RButton *rb,int fire=1,bool do_draw=true); // if fire, then cmd is called
   void set_rbutnr(int nr,int fire=1,bool do_draw=true);
   int act_rbutnr();
+  RButton* act_button();
   void reset();
   RButton *add_rbut(Label lab);
   RButton *is_in_rbutton(SDL_MouseButtonEvent *ev);
