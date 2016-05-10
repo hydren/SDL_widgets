@@ -25,19 +25,40 @@ rm -f a.out
 [ $okay = no ] && { echo "Some libraries are missing"; exit; }
 
 echo -n "Searching font files ... "
-FONTDIR=/usr/share/fonts
 
-if test $# -gt 1; then
-  if test $1 = "--fontdir"; then
-    shift
-    FONTDIR="$1"
-  else
-    echo "unexpected option $1"
-    exit
-  fi
-fi
-FONTPATH=`find $FONTDIR -name FreeSans.ttf`
-FONTPATH_MONO=`find $FONTDIR -name FreeMonoBold.ttf`
+case "$(uname -s)" in
+	Darwin)
+		echo 'searching in a Mac OS X '
+		FONTPATH="/Library/Fonts/Arial.ttf"
+		FONTPATH_MONO="/Library/Fonts/Courier New.ttf"
+		# we could try to load lucida grande or Apple Symbols.ttf
+	;;
+	
+	CYGWIN*|MINGW32*|MSYS*)
+		echo 'searching in a MS Windows '
+		FONTPATH="C:\\Windows\\Fonts\\Arial.ttf"
+		FONTPATH_MONO="C:\\Windows\\Fonts\\COUR.ttf"
+		# we could try to load trebuchet or segoe...
+	;;
+    
+    *)
+    	echo 'searching in a Linux or other OS '
+    		FONTDIR=/usr/share/fonts
+	
+		if test $# -gt 1; then
+			if test $1 = "--fontdir"; then
+				shift
+				FONTDIR="$1"
+			else
+	    		echo "unexpected option $1"
+	    		exit
+			fi
+		fi
+		
+		FONTPATH=`find $FONTDIR -name FreeSans.ttf`
+		FONTPATH_MONO=`find $FONTDIR -name FreeMonoBold.ttf`
+	;;
+esac
 
 if [ -z "$FONTPATH" ] || [ -z "$FONTPATH_MONO" ]
 then okay=no
@@ -46,7 +67,13 @@ fi
 
 [ $okay = no ] && { echo "TrueType font-spec not found"; exit; }
 
-echo "const char* FONTPATH=\"$FONTPATH\";" > config.h
-echo "const char* FONTPATH_MONO=\"$FONTPATH_MONO\";" >> config.h
-echo "Created: config.h. Now you can run 'make'"
+if [ -e "config.h" ]; then
+	echo "File config.h is already present."
+else
+	echo "const char* FONTPATH=\"$FONTPATH\";" > config.h
+	echo "const char* FONTPATH_MONO=\"$FONTPATH_MONO\";" >> config.h
+	echo "Created: config.h. Edit it to specify a custom font file."
+fi
+
+echo "Now you can run 'make'"
  
