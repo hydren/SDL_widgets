@@ -3197,7 +3197,7 @@ void handle_events(SDL_Event *ev) {
        the_cursor.keep=false;
        break;
      case SDL_VIDEOEXPOSE:
-       //say("expose");
+       say("expose");
        topw->draw_blit_recur();
        SDL_Flip(topw->win);
        break;
