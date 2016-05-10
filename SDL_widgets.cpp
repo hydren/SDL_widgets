@@ -1639,6 +1639,13 @@ void ExtRButCtrl::set_rbut(RExtButton* rb,int fire) {
   if (fire && reb_cmd) reb_cmd(rb,true);
 }
 
+void ExtRButCtrl::reset()
+{
+	RExtButton *act_old=act_lbut;
+	act_lbut=0;
+	if (act_old) act_old->draw_blit_upd();
+}
+
 void RExtButton::draw() {
   init_gui();
   bool is_act = rxb_ctr->act_lbut==this;
