@@ -2941,6 +2941,10 @@ void working_dir(void (*callb)(const char* path,Id),Id id,bool setpos,Sint16 pos
   f_chooser->working_dir();
 }
 
+void close_file_chooser() {
+	f_chooser->bgw->hide();
+}
+
 void handle_events(SDL_Event *ev) {
    SDL_MouseButtonEvent *mbe=reinterpret_cast<SDL_MouseButtonEvent*>(ev);
 /* does not work: motion events of right button get button nr 4 instead of SDL_BUTTON_RIGHT
