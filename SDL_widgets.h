@@ -130,6 +130,7 @@ struct WinBase {
   void upd(Rect *rect=0);    // update top window
   void widen(int dx,int dy); // widen win
   void move(int dx,int dy);  // move win
+  void set_pos(Sint16 x, Sint16 y); // set win position (wrapper to WinBase::move())
   bool move_if_ok(int delta_x,int delta_y); // guarded move
   Point tit_os();            // get title offset
   void keep_on_top();        // make staying visible

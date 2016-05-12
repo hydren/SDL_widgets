@@ -2100,6 +2100,11 @@ void WinBase::move(int dx,int dy) {
   move_tw_area(this,dx,dy); 
 }
 
+void WinBase::set_pos(Sint16 x, Sint16 y)
+{
+	move(x-area.x,y-area.y);
+}
+
 void WinBase::keep_on_top() {
   if (ontopw) return; // called more then once?
   if (parent) { alert("keep_on_top: parent != 0"); return; }
