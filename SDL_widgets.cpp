@@ -2942,7 +2942,7 @@ void working_dir(void (*callb)(const char* path,Id),Id id,bool setpos,Sint16 pos
 }
 
 void close_file_chooser() {
-	f_chooser->bgw->hide();
+	if(f_chooser) f_chooser->bgw->hide();
 }
 
 void handle_events(SDL_Event *ev) {
