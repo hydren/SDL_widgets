@@ -2732,6 +2732,7 @@ void EditWin::get_info(bool *active,int* nr_lines,int* cursor_ypos,int *nr_chars
 static struct FileChooser *f_chooser;
 
 struct FileChooser {
+  FileChooser(Sint16 x=0, Sint16 y=0);
   Id id;
   int f_max,d_max,
       dname_nr,fname_nr;
@@ -2810,12 +2811,12 @@ void FileChooser::rbw_fch_cmd(int nr) {
   }
 }
 
-FileChooser::FileChooser():
+FileChooser::FileChooser(Sint16 x, Sint16 y):
     id(0),
     f_max(50),d_max(50),
     dir_names(new char*[d_max]),
     f_names(new char*[f_max]) {
-  bgw=new BgrWin(0,Rect(0,0,200,win_h+5),0,draw_otwin,mwin::down,mwin::move,mwin::up,cGrey);
+  bgw=new BgrWin(0,Rect(x,y,200,win_h+5),0,draw_otwin,mwin::down,mwin::move,mwin::up,cGrey);
   bgw->keep_on_top();
   new Button(bgw,Style(0,1),Rect(bgw->tw_area.w-20,3,14,13),"X",button_cmd);
   bgw->draw_blit_recur();
@@ -2920,9 +2921,9 @@ void FileChooser::working_dir() {
   buttons->draw_blit_upd();
 }
 
-void file_chooser(void (*callb)(const char* path,Id),Id id) {
-  if (f_chooser) f_chooser->bgw->show();
-  else f_chooser=new FileChooser();
+void file_chooser(void (*callb)(const char* path,Id),Id id,bool setpos,Sint16 posx,Sint16 posy) {
+  if (f_chooser) { f_chooser->bgw->set_pos(posx, posy); f_chooser->bgw->show(); }
+  else f_chooser=new FileChooser(posx, posy);
   if (the_menu) { the_menu->mclose(); the_menu=0; }
   f_chooser->id=id;
   f_chooser->buttons->rb_cmd=FileChooser::rbw_fch_cmd;
@@ -2930,9 +2931,9 @@ void file_chooser(void (*callb)(const char* path,Id),Id id) {
   f_chooser->choose_file();
 }
 
-void working_dir(void (*callb)(const char* path,Id),Id id) {
-  if (f_chooser) f_chooser->bgw->show();
-  else f_chooser=new FileChooser();
+void working_dir(void (*callb)(const char* path,Id),Id id,bool setpos,Sint16 posx,Sint16 posy) {
+  if (f_chooser) { f_chooser->bgw->set_pos(posx, posy); f_chooser->bgw->show(); }
+  else f_chooser=new FileChooser(posx, posy);
   if (the_menu) { the_menu->mclose(); the_menu=0; }
   f_chooser->id=id;
   f_chooser->buttons->rb_cmd=FileChooser::rbw_wdir_cmd;
