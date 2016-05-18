@@ -2100,11 +2100,6 @@ void WinBase::move(int dx,int dy) {
   move_tw_area(this,dx,dy); 
 }
 
-void WinBase::set_pos(Sint16 x, Sint16 y)
-{
-	move(x-area.x,y-area.y);
-}
-
 void WinBase::keep_on_top() {
   if (ontopw) return; // called more then once?
   if (parent) { alert("keep_on_top: parent != 0"); return; }
@@ -2922,7 +2917,7 @@ void FileChooser::working_dir() {
 }
 
 void file_chooser(void (*callb)(const char* path,Id),Id id,bool setpos,Sint16 posx,Sint16 posy) {
-  if (f_chooser) { f_chooser->bgw->set_pos(posx, posy); f_chooser->bgw->show(); }
+  if (f_chooser) { f_chooser->bgw->move(posx-f_chooser->bgw->area.x, posy-f_chooser->bgw->area.y); f_chooser->bgw->show(); }
   else f_chooser=new FileChooser(posx, posy);
   if (the_menu) { the_menu->mclose(); the_menu=0; }
   f_chooser->id=id;
@@ -2932,7 +2927,7 @@ void file_chooser(void (*callb)(const char* path,Id),Id id,bool setpos,Sint16 po
 }
 
 void working_dir(void (*callb)(const char* path,Id),Id id,bool setpos,Sint16 posx,Sint16 posy) {
-  if (f_chooser) { f_chooser->bgw->set_pos(posx, posy); f_chooser->bgw->show(); }
+  if (f_chooser) { f_chooser->bgw->move(posx-f_chooser->bgw->area.x, posy-f_chooser->bgw->area.y); f_chooser->bgw->show(); }
   else f_chooser=new FileChooser(posx, posy);
   if (the_menu) { the_menu->mclose(); the_menu=0; }
   f_chooser->id=id;
