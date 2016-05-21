@@ -36,8 +36,8 @@ case "$(uname -s)" in
 	
 	CYGWIN*|MINGW32*|MSYS*)
 		echo 'searching in a MS Windows '
-		FONTPATH="C:\\Windows\\Fonts\\Arial.ttf"
-		FONTPATH_MONO="C:\\Windows\\Fonts\\COUR.ttf"
+		FONTPATH="C:\\\\Windows\\\\Fonts\\\\Arial.ttf"
+		FONTPATH_MONO="C:\\\\Windows\\\\Fonts\\\\COUR.ttf"
 		# we could try to load trebuchet or segoe...
 	;;
     
