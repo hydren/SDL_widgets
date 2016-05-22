@@ -2831,7 +2831,9 @@ bool FileChooser::fill_fname_array(int &dir_nr,int &file_nr) {
   }
   free((void*)wd);
   while ((dir=readdir(dp))!=0) {
+    #ifndef _WIN32
     if (!dir->d_ino) { alert("d_ino?"); continue; }
+    #endif
     switch (dir->d_type) {
       case DT_DIR:
         if (strcmp(dir->d_name,".")) { // current dir not listed
@@ -2867,7 +2869,9 @@ bool FileChooser::fill_dname_array(int &dir_nr) {
   }
   free((void*)wd);
   while ((dir=readdir(dp))!=0) {
+    #ifndef _WIN32
     if (!dir->d_ino) { alert("d_ino?"); continue; }
+    #endif
     if (dir->d_type==DT_DIR) {
       if (strcmp(dir->d_name,".")) {
         if (dir_nr==d_max-1)
