@@ -2214,6 +2214,7 @@ void DialogWin::set_cursor(int x) {
   }
   cursor=min(lin->dlen,i);
   if (the_cursor.edwd) { the_cursor.edwd->unset_cursor(); the_cursor.edwd=0; }
+  else if (the_cursor.diawd && the_cursor.diawd!=this) { the_cursor.diawd->unset_cursor(); }//unset previous set dialog win
   the_cursor.diawd=this;
   draw_line();
 }
