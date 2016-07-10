@@ -2243,7 +2243,7 @@ void DialogWin::dialog_def(const char *s,void(*_cmd)(const char*,int cmdid),int 
 }
 
 static void lr_shift(int sym,int &ks) {  // left or right shift key
-  if (sym!=KMOD_LSHIFT && sym!=KMOD_RSHIFT) return;
+  if (!(sym & (KMOD_LSHIFT|KMOD_RSHIFT))) return;
   switch (ks) {  // todo: more symbols
     case '`': ks='~'; break;
     case '1': ks='!'; break;
@@ -2302,7 +2302,7 @@ bool DialogWin::handle_key(SDL_keysym *key) {
       break;
     default:
       if (ks>=0x20 && ks<0x80) {
-        if (key->mod==KMOD_LCTRL || key->mod==KMOD_RCTRL) {
+        if (key->mod & (KMOD_LCTRL|KMOD_RCTRL)) {
           if (ks==SDLK_d) {
             lin->reset();
             cursor=0; 
@@ -2651,7 +2651,7 @@ void EditWin::handle_key(SDL_keysym *key) {
     default:
       if (cmd) cmd(key->mod,ks1,id.id1);
       if (ks1>=0x20 && ks1<0x80) {
-        if (key->mod==KMOD_LCTRL || key->mod==KMOD_RCTRL) {
+        if (key->mod & (KMOD_LCTRL|KMOD_RCTRL)) {
           if (ks1==SDLK_d) {
             if (lin) lin->reset();
             cursor.x=0;
