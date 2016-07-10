@@ -2312,12 +2312,36 @@ static void lr_shift(int sym,int &ks) {  // left or right shift key
   }
 }
 
+static void kp_to_ascii(int &ks)
+{
+	switch (ks) {
+		case SDLK_KP0:	ks = SDLK_0; break;
+		case SDLK_KP1:	ks = SDLK_1; break;
+		case SDLK_KP2:	ks = SDLK_2; break;
+		case SDLK_KP3:	ks = SDLK_3; break;
+		case SDLK_KP4:	ks = SDLK_4; break;
+		case SDLK_KP5:	ks = SDLK_5; break;
+		case SDLK_KP6:	ks = SDLK_6; break;
+		case SDLK_KP7:	ks = SDLK_7; break;
+		case SDLK_KP8:	ks = SDLK_8; break;
+		case SDLK_KP9:	ks = SDLK_9; break;
+		case SDLK_KP_PERIOD:	ks = SDLK_PERIOD; break;
+		case SDLK_KP_DIVIDE:	ks = SDLK_SLASH; break;
+		case SDLK_KP_MULTIPLY:	ks = SDLK_ASTERISK; break;
+		case SDLK_KP_MINUS:		ks = SDLK_MINUS; break;
+		case SDLK_KP_PLUS:		ks = SDLK_PLUS; break;
+		case SDLK_KP_ENTER:		ks = SDLK_RETURN; break;
+		case SDLK_KP_EQUALS:	ks = SDLK_EQUALS; break;
+		default: break;
+	}
+}
+
 bool DialogWin::handle_key(SDL_keysym *key) {
   int ks=key->sym; // sym is an enum
   switch (ks) {
     case SDLK_LCTRL: case SDLK_RCTRL:
       break;
-    case SDLK_RETURN:
+    case SDLK_RETURN: case SDLK_KP_ENTER:
       unset_cursor();
       return true;
     case SDLK_BACKSPACE:
@@ -2340,6 +2364,7 @@ bool DialogWin::handle_key(SDL_keysym *key) {
       }
       break;
     default:
+      if (ks >= SDLK_KP0 && ks <= SDLK_KP_EQUALS) kp_to_ascii(ks);
       if (ks>=0x20 && ks<0x80) {
         if (key->mod & (KMOD_LCTRL|KMOD_RCTRL)) {
           if (ks==SDLK_d) {
@@ -2585,7 +2610,7 @@ void EditWin::handle_key(SDL_keysym *key) {
        *lin2;
 
   switch (ks1) {
-    case SDLK_RETURN:
+    case SDLK_RETURN: case SDLK_KP_ENTER:
       if (cmd) cmd(0,ks1,id.id1);
       ++linenr;
       if (linenr>=lmax) lines=re_alloc(lines,lmax);
@@ -2689,6 +2714,7 @@ void EditWin::handle_key(SDL_keysym *key) {
       break;
     default:
       if (cmd) cmd(key->mod,ks1,id.id1);
+      if (ks1 >= SDLK_KP0 && ks1 <= SDLK_KP_EQUALS) kp_to_ascii(ks1);
       if (ks1>=0x20 && ks1<0x80) {
         if (key->mod & (KMOD_LCTRL|KMOD_RCTRL)) {
           if (ks1==SDLK_d) {
