@@ -31,7 +31,20 @@
 #include <SDL/SDL_thread.h>
 #include "sw-pixmaps.h"
 
+#ifdef INCLUDE_FOR_OLDER_SDL
+	#define ENABLE_MISSING_NON_ANSI
+	#include <cstdlib>
+	#include <cstring>
+	#include <ctype.h>
+#endif
+
 #ifdef _WIN32
+	#ifndef ENABLE_MISSING_NON_ANSI
+		#define ENABLE_MISSING_NON_ANSI
+	#endif
+#endif
+
+#ifdef ENABLE_MISSING_NON_ANSI
 	#define bzero(b,len) (memset((b), '\0', (len)), (void) 0)
 
 	#ifndef __STRICT_ANSI__
