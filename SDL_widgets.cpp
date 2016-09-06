@@ -28,6 +28,7 @@
 #include <dirent.h> // for DIR, dirent, opendir()
 #include "config.h"
 #include "SDL_widgets.h"
+#include <SDL/SDL_thread.h>
 #include "sw-pixmaps.h"
 
 #ifdef _WIN32
