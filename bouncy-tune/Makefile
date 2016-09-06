@@ -4,14 +4,14 @@ CFLAGS=-g $$(sdl-config --cflags) \
 
 .SUFFIXES=
 
-bouncy-tune: bouncy-tune.o dump-wave.o ../sdl-widgets.o
-	$(CC) $@.o dump-wave.o ../sdl-widgets.o -o $@ $$(sdl-config --libs) -lSDL_gfx -lSDL_ttf
+bouncy-tune: bouncy-tune.o dump-wave.o ../SDL_widgets.o
+	$(CC) $@.o dump-wave.o ../SDL_widgets.o -o $@ $$(sdl-config --libs) -lSDL_gfx -lSDL_ttf
 
-../sdl-widgets.o: ../sdl-widgets.cpp ../sdl-widgets.h ../sw-pixmaps.h
-	make -C .. sdl-widgets.o
+../SDL_widgets.o: ../SDL_widgets.cpp ../SDL_widgets.h ../sw-pixmaps.h
+	make -C .. SDL_widgets.o
 
 %.o: %.cpp
 	$(CC) -c $< -I.. $(CFLAGS)
 
-bouncy-tune.o: ../sdl-widgets.h dump-wave.h templates.h
+bouncy-tune.o: ../SDL_widgets.h dump-wave.h templates.h
 dump-wave.o: dump-wave.h

@@ -4,13 +4,13 @@ LFLAGS=$(shell sdl-config --libs) -lSDL_gfx -lSDL_ttf
 
 .SUFFIXES=
 
-hello: hello.o ../sdl-widgets.o
-	$(CC) $@.o ../sdl-widgets.o -o $@ $(LFLAGS)
+hello: hello.o ../SDL_widgets.o
+	$(CC) $@.o ../SDL_widgets.o -o $@ $(LFLAGS)
 
 %.o: %.cpp
 	$(CC) -c $< -I.. $(CFLAGS)
 
-../sdl-widgets.o: ../sdl-widgets.cpp ../sdl-widgets.h ../sw-pixmaps.h
-	make -C .. sdl-widgets.o
+../SDL_widgets.o: ../SDL_widgets.cpp ../SDL_widgets.h ../sw-pixmaps.h
+	make -C .. SDL_widgets.o
 
-hello.o: ../sdl-widgets.h
+hello.o: ../SDL_widgets.h
