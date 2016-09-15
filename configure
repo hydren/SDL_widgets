@@ -72,7 +72,6 @@ if [ -e "config.h" ]; then
 else
 	echo "const char* FONTPATH=\"$FONTPATH\";" > config.h
 	echo "const char* FONTPATH_MONO=\"$FONTPATH_MONO\";" >> config.h
-	echo "//#define INCLUDE_FOR_OLDER_SDL //uncommenting this line may solve compilations problems on older SDL versions" >> config.h
 	echo "//#define arcColor pieColor //uncomment this if your version of SDL_gfx is too old" >> config.h
 	echo "Created: config.h. Edit it to specify a custom font file."
 fi
