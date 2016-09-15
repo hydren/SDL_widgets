@@ -33,10 +33,12 @@
 		#undef min
 		#undef max
 	#endif
-#elif (defined(__GNUG__) || defined(__GNUC__)) && !defined(__STRICT_ANSI__)
+#elif (defined(__GNUG__) || defined(__GNUC__))
 	#define CUSTOM_LRINT_DISABLED
-	#define CUSTOM_STRCASECMP_DISABLED
-	#define CUSTOM_STRDUP_DISABLED
+	#ifndef __STRICT_ANSI__
+		#define CUSTOM_STRCASECMP_DISABLED
+		#define CUSTOM_STRDUP_DISABLED
+	#endif
 #endif
 
 // If C++11 or C99, these POSIX functions are available
