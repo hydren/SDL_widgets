@@ -725,9 +725,16 @@ SDL_Cursor *init_system_cursor(const char *image[]) {
   return SDL_CreateCursor(data, mask, 32, 32, hot_x, hot_y);
 }
 
+TopWin::TopWin(const char* wm_title,Rect rect,Uint32 init_flag,Uint32 vflag,void (*draw_cmd)(),void (*set_icon)()):
+    WinBase(0,0,0,0,rect.w,rect.h,cBackground,0),
+    display_cmd(draw_cmd) { init(wm_title, rect, init_flag, vflag, set_icon); }
+
 TopWin::TopWin(const char* wm_title,Rect rect,Uint32 init_flag,Uint32 vflag,void (*draw_cmd)(),void (*set_icon)(),void (*on_sdl_init)()):
     WinBase(0,0,0,0,rect.w,rect.h,cBackground,0),
-    display_cmd(draw_cmd) {
+    display_cmd(draw_cmd) { init(wm_title, rect, init_flag, vflag, set_icon, on_sdl_init); }
+
+void TopWin::init(const char* wm_title,Rect& rect,Uint32 init_flag, Uint32 vflag, void (*set_icon)(), void (*on_sdl_init)())
+{
   if (SDL_Init(init_flag) < 0) err("SDL init problem");
   if(on_sdl_init!=0) on_sdl_init();
   if (TTF_Init() < 0) err("SDL ttf init problem");
