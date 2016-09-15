@@ -315,7 +315,7 @@ struct Dial:WinBase {
   static const int pnt_max=4,
                    sdx=60; // mouse sensitivity
   int d_start;
-  const Point loc[pnt_max];
+  Point loc[pnt_max]; // should be treated as const
   Point aloc[pnt_max]; // actual location
   float radius[pnt_max],
         angle[pnt_max],

@@ -1057,8 +1057,8 @@ Dial::Dial(WinBase *pw,Style st,Rect rect,int minval,int maxval,
     mid(rect.w/2,rect.w/2),
     txt_rect(rect.x+rect.w+3, rect.y+mid.y, 0, 15),
     d_start(0),
-    loc((Point[]){ Point(-2,4), Point(2,4), Point(2,mid.y-1), Point(-2,mid.y-1) }), // pointer
     ang(0) {
+	loc[0] = Point(-2,4); loc[1] = Point(2,4); loc[2] = Point(2,mid.y-1); loc[3] = Point(-2,mid.y-1); // pointer (initialize here since its the only way possible prior to c++11)
   for (int i=0;i<pnt_max;++i) {
     float x=loc[i].x,
           y=loc[i].y;
