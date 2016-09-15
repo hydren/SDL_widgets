@@ -135,3 +135,6 @@
 	}
 #endif
 
+// Include directly because old SDL versions don't.
+#include <SDL/SDL_thread.h>
+

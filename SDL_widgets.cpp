@@ -29,7 +29,6 @@
 #include "config.h"
 #include "compat.h"
 #include "SDL_widgets.h"
-#include <SDL/SDL_thread.h>
 #include "sw-pixmaps.h"
 
 Uint32 cWhite,cBlack, cGrey, cRed, cBlue,
