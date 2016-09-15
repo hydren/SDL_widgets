@@ -7,6 +7,10 @@
 
 /// This header provides alternative implementations of POSIX-defined functions, for compatibilty purposes
 
+#if !defined(_WIN32) && defined(__STRICT_ANSI__)
+	#define off64_t _off64_t
+#endif
+
 #ifdef __cplusplus
 	#include <cstdlib>
 	#include <cstring>
@@ -137,4 +141,3 @@
 
 // Include directly because old SDL versions don't.
 #include <SDL/SDL_thread.h>
-

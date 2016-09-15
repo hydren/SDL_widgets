@@ -16,10 +16,6 @@
     License along with this library.
 */
 
-#if defined(_WIN32) && defined(__STRICT_ANSI__)
-	#define off64_t _off64_t
-#endif
-
 #include <stdio.h>
 #include <stdarg.h>
 #ifndef _WIN32
