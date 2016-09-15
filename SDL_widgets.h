@@ -482,8 +482,10 @@ void get_events();
 Uint32 calc_color(Uint32 c);
 SDL_Surface *create_pixmap(const char* pm_data[]);
 SDL_Cursor *init_system_cursor(const char *image[]);
-void file_chooser(void (*cmd)(const char* f_name,Id id),Id=0,bool setpos=false,Sint16 posx=0,Sint16 posy=0);
-void working_dir(void (*cmd)(const char* dir_name,Id id)=0,Id=0,bool setpos=false,Sint16 posx=0,Sint16 posy=0);
+void file_chooser(void (*cmd)(const char* f_name,Id id),Id=0);
+void file_chooser(void (*cmd)(const char* f_name,Id id),Id,Sint16 posx,Sint16 posy);
+void working_dir(void (*cmd)(const char* dir_name,Id id)=0,Id=0);
+void working_dir(void (*cmd)(const char* dir_name,Id id),Id,Sint16 posx,Sint16 posy);
 void close_file_chooser();
 void print_h();  // print widget hierarchy
 namespace mwin {
