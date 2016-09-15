@@ -18,9 +18,7 @@
 
 #include <stdio.h>
 #include <stdarg.h>
-#ifndef _WIN32
-	#include <unistd.h> // for chdir()
-#endif
+#include <unistd.h> // for chdir()
 #include <dirent.h> // for DIR, dirent, opendir()
 #include "config.h"
 #include "compat.h"
