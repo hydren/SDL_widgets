@@ -24,10 +24,6 @@
 #include "sdl-widgets.h"
 #include "sw-pixmaps.h"
 
-#ifdef _WIN32
-	#define bzero(b,len) (memset((b), '\0', (len)), (void) 0)
-#endif
-
 Uint32 cWhite,cBlack, cGrey, cRed, cBlue,
        cBorder, cBackground, cForeground, cPointer, cScrollbar;
 
@@ -122,13 +118,13 @@ void say(const char *form,...) {   // for debugging
 
 template<class T> T* new_nulled(T* t,int len) {
   t=new T[len];
-  bzero(t,sizeof(T)*len);
+  memset(t,0,sizeof(T)*len);
   return t;
 }
 
 template<class T> T* re_alloc(T* arr,int& len) { // arr only used for type inference
   T* new_arr=new T[len*2];
-  bzero(new_arr+len,sizeof(T)*len);
+  memset(new_arr+len,0,sizeof(T)*len);
   for (int i=0;i<len;++i) new_arr[i]=arr[i];
   delete[] arr;
   len*=2;
