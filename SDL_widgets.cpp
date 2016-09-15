@@ -27,47 +27,10 @@
 #endif
 #include <dirent.h> // for DIR, dirent, opendir()
 #include "config.h"
+#include "compat.h"
 #include "SDL_widgets.h"
 #include <SDL/SDL_thread.h>
 #include "sw-pixmaps.h"
-
-#ifdef INCLUDE_FOR_OLDER_SDL
-	#define ENABLE_MISSING_NON_ANSI
-	#include <cstdlib>
-	#include <cstring>
-	#include <ctype.h>
-#endif
-
-#ifdef _WIN32
-	#ifndef ENABLE_MISSING_NON_ANSI
-		#define ENABLE_MISSING_NON_ANSI
-	#endif
-#endif
-
-#ifdef ENABLE_MISSING_NON_ANSI
-	#ifndef __STRICT_ANSI__
-		#define strcasecmp _stricmp
-	#else
-		int strcasecmp( const char * str1, const char * str2)
-		{
-			unsigned int str1len = strlen(str1);
-			unsigned int str2len = strlen(str2);
-			if(str1len < str2len) return -str2[str1len];
-			if(str1len > str2len) return  str1[str2len];
-			unsigned int i;
-			for(i = 0; i < str1len; i++)
-				if (tolower(str1[i]) != tolower(str2[i]))
-					return tolower(str1[i]) - tolower(str2[i]);
-			return 0;
-		}
-		char *strdup (const char *s)
-		{
-			char *d = (char*) malloc (strlen (s) + 1);  // Allocate memory (Space for length plus nul)
-			if (d != NULL) strcpy (d,s);        		// Copy string if okay
-			return d;                            		// Return the new string
-		}
-	#endif
-#endif
 
 Uint32 cWhite,cBlack, cGrey, cRed, cBlue,
        cBorder, cBackground, cForeground, cPointer, cScrollbar;
