@@ -16,12 +16,13 @@
     License along with this library.
 */
 
+#include "config.h"
+
 #include <stdio.h>
 #include <stdarg.h>
 #include <unistd.h> // for chdir()
 #include <dirent.h> // for DIR, dirent, opendir()
 #include <algorithm>
-#include "config.h"
 #include "compat.h"
 #include "SDL_widgets.h"
 #include "sw-pixmaps.h"
