@@ -30,8 +30,6 @@
 		#define CUSTOM_SNPRINTF_ENABLED
 
 		#define strcasecmp _stricmp
-		#undef min
-		#undef max
 	#endif
 #elif (defined(__GNUG__) || defined(__GNUC__))
 	#define CUSTOM_LRINT_DISABLED

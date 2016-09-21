@@ -20,6 +20,7 @@
 #include <stdarg.h>
 #include <unistd.h> // for chdir()
 #include <dirent.h> // for DIR, dirent, opendir()
+#include <algorithm>
 #include "config.h"
 #include "compat.h"
 #include "SDL_widgets.h"
@@ -146,8 +147,12 @@ const char *id2s(int id) { // from 'abc' to "abc"
 
 Point alert_position(4,4);
 
-static int min(int a, int b) { return a<=b ? a : b; }
-static int max(int a, int b) { return a>=b ? a : b; }
+#ifndef min
+#define min std::min
+#endif
+#ifndef max
+#define max std::max
+#endif
 static int minmax(int a, int x, int b) { return x>=b ? b : x<=a ? a : x; }
 static int idiv(int a,int b) { return (2 * a + b)/(b*2); }
 
