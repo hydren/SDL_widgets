@@ -23,7 +23,7 @@
 #include <unistd.h> // for chdir()
 #include <dirent.h> // for DIR, dirent, opendir()
 #include <algorithm>
-#include "compat.h"
+#include "compat.hpp"
 #include "SDL_widgets.h"
 #include "sw-pixmaps.h"
 

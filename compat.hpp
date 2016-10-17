@@ -1,5 +1,5 @@
 /*
- * compat.h
+ * compat.hpp
  *
  *  Created on: 15 de set de 2016
  *      Author: carlosfelipe.faruolo
@@ -7,15 +7,9 @@
 
 /// This header provides alternative implementations of POSIX-defined functions, for compatibilty purposes
 
-#ifdef __cplusplus
-	#include <cstdlib>
-	#include <cstring>
-	#include <cctype>
-#else
-	#include <stdlib.h>
-	#include <string.h>
-	#include <ctype.h>
-#endif
+#include <cstdlib>
+#include <cstring>
+#include <cctype>
 
 // Dealing with specific compilers
 #ifdef _MSC_VER
@@ -36,7 +30,7 @@
 #endif
 
 // If C++11 or C99, these POSIX functions are available
-#if (defined(__cplusplus) && __cplusplus >= 201103L) || __STDC_VERSION__ >= 199901L
+#if __cplusplus >= 201103L
 	#ifndef CUSTOM_LRINT_DISABLED
 		#define CUSTOM_LRINT_DISABLED
 	#endif
@@ -65,11 +59,7 @@
 #endif
 
 #ifndef CUSTOM_STRCASECMP_DISABLED
-	#ifdef __cplusplus
-		#include <cstring>
-	#else
-		#include <string.h>
-	#endif
+	#include <cstring>
 
 	int strcasecmp( const char * str1, const char * str2)
 	{
@@ -99,18 +89,13 @@
 #endif
 
 #ifdef CUSTOM_SNPRINTF_ENABLED
-	#ifndef __cplusplus
-		#include <stdarg.h>
-		#include <stdio.h>
-	#else
-		#include <cstdarg>
-		#include <cstdio>
-	#endif
+	#include <cstdarg>
+	#include <cstdio>
 
 	#define vsnprintf c99_vsnprintf
 	#define snprintf c99_snprintf
 
-	int c99_vsnprintf(char *outBuf, size_t size, const char *format, va_list ap)
+	static int c99_vsnprintf(char *outBuf, size_t size, const char *format, va_list ap)
 	{
 		int count = -1;
 
@@ -122,7 +107,7 @@
 		return count;
 	}
 
-	int c99_snprintf(char *outBuf, size_t size, const char *format, ...)
+	static int c99_snprintf(char *outBuf, size_t size, const char *format, ...)
 	{
 		int count;
 		va_list ap;
