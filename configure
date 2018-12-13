@@ -34,7 +34,7 @@ case "$(uname -s)" in
 		# we could try to load lucida grande or Apple Symbols.ttf
 	;;
 	
-	CYGWIN*|MINGW32*|MSYS*)
+	CYGWIN*|MINGW*|MSYS*)
 		echo 'searching in a MS Windows '
 		FONTPATH="C:\\\\Windows\\\\Fonts\\\\Arial.ttf"
 		FONTPATH_MONO="C:\\\\Windows\\\\Fonts\\\\COUR.ttf"
